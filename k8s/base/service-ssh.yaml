@@ -1,0 +1,18 @@
+# NodePort service exposing SSH for tunnel creation.
+# Clients connect: ssh -p 30022 -R subdomain:80:backend:port localhost
+apiVersion: v1
+kind: Service
+metadata:
+  name: asd-tunnel-ssh
+  namespace: asd-tunnel-demo
+  labels:
+    app: asd-tunnel
+spec:
+  type: NodePort
+  selector:
+    app: asd-tunnel
+  ports:
+    - port: 2222
+      targetPort: 2222
+      nodePort: 30022
+      name: ssh

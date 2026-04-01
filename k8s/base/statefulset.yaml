@@ -1,0 +1,126 @@
+# 3-replica NATS-clustered asd-tunnel StatefulSet.
+# Each pod runs the tunnel server with SSH (2222), HTTP muxer (8081),
+# and NATS (4222/6222) for cross-pod tunnel routing.
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: asd-tunnel
+  namespace: asd-tunnel-demo
+  labels:
+    app: asd-tunnel
+spec:
+  serviceName: asd-tunnel-nats
+  replicas: 3
+  podManagementPolicy: OrderedReady
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+  selector:
+    matchLabels:
+      app: asd-tunnel
+  template:
+    metadata:
+      labels:
+        app: asd-tunnel
+    spec:
+      serviceAccountName: asd-tunnel
+      terminationGracePeriodSeconds: 30
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        runAsGroup: 65534
+        fsGroup: 65534
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: asd-tunnel
+          image: asd-tunnel:k8s-demo
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          ports:
+            - containerPort: 2222
+              name: ssh
+            - containerPort: 8081
+              name: http-internal
+            - containerPort: 4222
+              name: nats-client
+            - containerPort: 6222
+              name: nats-cluster
+          env:
+            - name: ASD_TUNNEL_DOMAIN
+              value: tunnel.local
+            - name: ASD_TUNNEL_SSH_ADDRESS
+              value: ":2222"
+            - name: ASD_TUNNEL_HTTP_ADDRESS
+              value: ":8081"
+            - name: ASD_TUNNEL_AUTHENTICATION
+              value: "true"
+            - name: ASD_TUNNEL_BIND_RANDOM_SUBDOMAINS
+              value: "false"
+            - name: ASD_TUNNEL_FORCE_REQUESTED_SUBDOMAINS
+              value: "true"
+            - name: ASD_TUNNEL_BIND_ANY_HOST
+              value: "true"
+            - name: ASD_TUNNEL_LOCALHOST_AS_ALL
+              value: "true"
+            - name: ASD_TUNNEL_IDLE_CONNECTION
+              value: "false"
+            - name: ASD_TUNNEL_LOG_TO_STDOUT
+              value: "true"
+            - name: ASD_TUNNEL_LOG_JSON
+              value: "true"
+            # --- NATS clustering ---
+            - name: ASD_TUNNEL_NATS_ENABLED
+              value: "true"
+            - name: ASD_TUNNEL_NATS_PORT
+              value: "4222"
+            - name: ASD_TUNNEL_NATS_CLUSTER_PORT
+              value: "6222"
+            - name: ASD_TUNNEL_NATS_CLUSTER_NAME
+              value: k8s-demo
+            - name: ASD_TUNNEL_NATS_CLUSTER_PEERS
+              value: "nats://asd-tunnel-0.asd-tunnel-nats.asd-tunnel-demo.svc.cluster.local:6222,nats://asd-tunnel-1.asd-tunnel-nats.asd-tunnel-demo.svc.cluster.local:6222,nats://asd-tunnel-2.asd-tunnel-nats.asd-tunnel-demo.svc.cluster.local:6222"
+            - name: POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+            - name: GOMEMLIMIT
+              value: "160MiB"
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: ssh-keys
+              mountPath: /app/deploy/keys
+          resources:
+            requests:
+              cpu: "5m"
+              memory: "16Mi"
+            limits:
+              cpu: "200m"
+              memory: "188Mi"
+          livenessProbe:
+            tcpSocket:
+              port: 2222
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          readinessProbe:
+            tcpSocket:
+              port: 2222
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          lifecycle:
+            preStop:
+              exec:
+                command: ["sh", "-c", "sleep 5"]
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 64Mi
+        - name: ssh-keys
+          emptyDir:
+            sizeLimit: 1Mi

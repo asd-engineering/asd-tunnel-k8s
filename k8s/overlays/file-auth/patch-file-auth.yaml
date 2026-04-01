@@ -1,0 +1,24 @@
+# Enable file-based authentication: mount public keys directory into tunnel pods.
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: asd-tunnel
+  namespace: asd-tunnel-demo
+spec:
+  template:
+    spec:
+      containers:
+        - name: asd-tunnel
+          env:
+            - name: ASD_TUNNEL_AUTHENTICATION
+              value: "true"
+            - name: ASD_TUNNEL_AUTHENTICATION_KEYS_DIRECTORY
+              value: "/etc/tunnel/pubkeys"
+          volumeMounts:
+            - name: pubkeys
+              mountPath: /etc/tunnel/pubkeys
+              readOnly: true
+      volumes:
+        - name: pubkeys
+          configMap:
+            name: tunnel-pubkeys

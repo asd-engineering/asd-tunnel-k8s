@@ -1,0 +1,17 @@
+# SSH config for asd-tunnel on a kind cluster.
+# Add to ~/.ssh/config and adjust as needed.
+
+Host tunnel-local
+    HostName localhost
+    Port 30022
+    User tunnel
+    StrictHostKeyChecking no
+    UserKnownHostsFile /dev/null
+    LogLevel ERROR
+    # Optional: specify key for file-auth overlay
+    # IdentityFile ~/.ssh/tunnel-demo
+
+# Usage:
+#   ssh -N -R myapp:80:localhost:3000 tunnel-local
+#
+# Then access: http://myapp.tunnel.local:30080

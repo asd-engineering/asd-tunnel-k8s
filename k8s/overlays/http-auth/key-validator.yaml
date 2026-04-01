@@ -1,0 +1,75 @@
+# Key validator deployment and service for HTTP-based SSH key authentication.
+# asd-tunnel sends POST /validate with the connecting user's public key.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: key-validator
+  namespace: asd-tunnel-demo
+  labels:
+    app: key-validator
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: key-validator
+  template:
+    metadata:
+      labels:
+        app: key-validator
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        runAsGroup: 65534
+        fsGroup: 65534
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: key-validator
+          image: key-validator:local
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          ports:
+            - containerPort: 3000
+          env:
+            - name: PORT
+              value: "3000"
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+          resources:
+            requests:
+              cpu: "5m"
+              memory: "16Mi"
+            limits:
+              cpu: "100m"
+              memory: "64Mi"
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 3000
+            initialDelaySeconds: 2
+            periodSeconds: 5
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 32Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: key-validator
+  namespace: asd-tunnel-demo
+  labels:
+    app: key-validator
+spec:
+  type: ClusterIP
+  selector:
+    app: key-validator
+  ports:
+    - port: 3000
+      targetPort: 3000
+      name: http

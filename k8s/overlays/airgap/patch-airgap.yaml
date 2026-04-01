@@ -1,0 +1,23 @@
+# Air-gap patches: imagePullSecrets for private registry authentication.
+# Replace "registry-credentials" with your actual secret name.
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: asd-tunnel
+  namespace: asd-tunnel-demo
+spec:
+  template:
+    spec:
+      imagePullSecrets:
+        - name: registry-credentials
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: validation-server
+  namespace: asd-tunnel-demo
+spec:
+  template:
+    spec:
+      imagePullSecrets:
+        - name: registry-credentials

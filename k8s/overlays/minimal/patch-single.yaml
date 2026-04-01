@@ -1,0 +1,14 @@
+# Scale to 1 replica, disable NATS clustering, and disable auth for local dev.
+- op: replace
+  path: /spec/replicas
+  value: 1
+- op: replace
+  path: /spec/template/spec/containers/0/env/3
+  value:
+    name: ASD_TUNNEL_AUTHENTICATION
+    value: "false"
+- op: replace
+  path: /spec/template/spec/containers/0/env/11
+  value:
+    name: ASD_TUNNEL_NATS_ENABLED
+    value: "false"

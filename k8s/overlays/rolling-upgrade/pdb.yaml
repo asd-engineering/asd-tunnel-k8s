@@ -1,0 +1,12 @@
+# PodDisruptionBudget: ensure at least 2 pods remain during rolling upgrades.
+# With 3 replicas and maxUnavailable:1, this guarantees tunnel availability.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: asd-tunnel-pdb
+  namespace: asd-tunnel-demo
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app: asd-tunnel

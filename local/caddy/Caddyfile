@@ -1,0 +1,12 @@
+{
+	http_port 8880
+	https_port 8443
+}
+
+*.tunnel.localhost {
+	tls internal
+	reverse_proxy 127.0.0.1:30080 {
+		header_up Host {labels.2}.tunnel.local
+		header_up X-Forwarded-Proto https
+	}
+}

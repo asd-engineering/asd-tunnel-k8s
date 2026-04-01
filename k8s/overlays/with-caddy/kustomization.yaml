@@ -1,0 +1,14 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - ../../base
+  - caddy-configmap.yaml
+  - service-caddy.yaml
+
+components:
+  - ../../components/validation-server
+
+patches:
+  - path: patch-caddy-sidecar.yaml
+  - path: patch-networkpolicy.yaml

@@ -1,0 +1,21 @@
+# Headless service for NATS cluster peer discovery.
+# StatefulSet pods get stable DNS names:
+#   asd-tunnel-{0,1,2}.asd-tunnel-nats.asd-tunnel-demo.svc.cluster.local
+apiVersion: v1
+kind: Service
+metadata:
+  name: asd-tunnel-nats
+  namespace: asd-tunnel-demo
+  labels:
+    app: asd-tunnel
+spec:
+  clusterIP: None
+  selector:
+    app: asd-tunnel
+  ports:
+    - port: 6222
+      name: nats-cluster
+      targetPort: 6222
+    - port: 4222
+      name: nats-client
+      targetPort: 4222

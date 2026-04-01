@@ -1,0 +1,16 @@
+# Enable HTTP-based authentication: tunnel validates keys via the key-validator service.
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: asd-tunnel
+  namespace: asd-tunnel-demo
+spec:
+  template:
+    spec:
+      containers:
+        - name: asd-tunnel
+          env:
+            - name: ASD_TUNNEL_AUTHENTICATION
+              value: "true"
+            - name: ASD_TUNNEL_AUTHENTICATION_KEY_REQUEST_URL
+              value: "http://key-validator.asd-tunnel-demo.svc.cluster.local:3000/validate"

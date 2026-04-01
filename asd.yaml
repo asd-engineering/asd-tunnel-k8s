@@ -1,0 +1,419 @@
+version: 1
+
+project:
+  name: asd-tunnel-k8s
+  domain: tunnel.local
+  description: "ASD Tunnel on Kubernetes — reference deployment & validation"
+  env_template: tpl.env
+
+features:
+  auto_detect_services: false
+  auto_start_caddy: false
+
+automation:
+  # --- Cluster Lifecycle ---
+
+  quickstart:
+    - name: Create kind cluster
+      run: ./scripts/setup-cluster.sh ${{ env.CLUSTER_NAME }}
+      skipWhen:
+        command: "kind get clusters 2>/dev/null | grep -q ${{ env.CLUSTER_NAME }}"
+
+    - name: Build validation-server image
+      run: docker build -t validation-server:local services/validation-server/
+
+    - name: Load tunnel image
+      run: |
+        if ! docker image inspect asd-tunnel:k8s-demo >/dev/null 2>&1; then
+          docker pull ghcr.io/asd-engineering/asd-tunnel-server:latest
+          docker tag ghcr.io/asd-engineering/asd-tunnel-server:latest asd-tunnel:k8s-demo
+        fi
+        kind load docker-image asd-tunnel:k8s-demo --name ${{ env.CLUSTER_NAME }}
+
+    - name: Load validation-server image
+      run: kind load docker-image validation-server:local --name ${{ env.CLUSTER_NAME }}
+
+    - name: Deploy minimal overlay
+      run: kubectl apply -k k8s/overlays/minimal
+
+    - name: Wait for StatefulSet rollout
+      run: kubectl rollout status statefulset/asd-tunnel -n ${{ env.NAMESPACE }} --timeout=180s
+
+    - name: Wait for validation-server
+      run: kubectl rollout status deployment/validation-server -n ${{ env.NAMESPACE }} --timeout=60s
+
+    - portCheck:
+        port: ${{ env.TUNNEL_SSH_PORT }}
+        timeoutMs: 30000
+        intervalMs: 1000
+
+    - name: Cluster ready
+      run: kubectl get pods -n ${{ env.NAMESPACE }} -o wide
+
+  quickstart-full:
+    - name: Create kind cluster
+      run: ./scripts/setup-cluster.sh ${{ env.CLUSTER_NAME }}
+      skipWhen:
+        command: "kind get clusters 2>/dev/null | grep -q ${{ env.CLUSTER_NAME }}"
+
+    - name: Build validation-server image
+      run: docker build -t validation-server:local services/validation-server/
+
+    - name: Load tunnel image
+      run: |
+        if ! docker image inspect asd-tunnel:k8s-demo >/dev/null 2>&1; then
+          docker pull ghcr.io/asd-engineering/asd-tunnel-server:latest
+          docker tag ghcr.io/asd-engineering/asd-tunnel-server:latest asd-tunnel:k8s-demo
+        fi
+        kind load docker-image asd-tunnel:k8s-demo --name ${{ env.CLUSTER_NAME }}
+
+    - name: Load validation-server image
+      run: kind load docker-image validation-server:local --name ${{ env.CLUSTER_NAME }}
+
+    - name: Deploy file-auth overlay (3 replicas, NATS)
+      run: kubectl apply -k k8s/overlays/file-auth
+
+    - name: Wait for StatefulSet rollout
+      run: kubectl rollout status statefulset/asd-tunnel -n ${{ env.NAMESPACE }} --timeout=180s
+
+    - name: Wait for validation-server
+      run: kubectl rollout status deployment/validation-server -n ${{ env.NAMESPACE }} --timeout=60s
+
+    - portCheck:
+        port: ${{ env.TUNNEL_SSH_PORT }}
+        timeoutMs: 30000
+        intervalMs: 1000
+
+    - name: Cluster ready
+      run: kubectl get pods -n ${{ env.NAMESPACE }} -o wide
+
+  teardown:
+    - name: Delete kind cluster
+      run: kind delete cluster --name ${{ env.CLUSTER_NAME }}
+
+  # --- Build ---
+
+  build:
+    - name: Build validation-server
+      run: docker build -t validation-server:local services/validation-server/
+
+    - name: Build key-validator
+      run: docker build -t key-validator:local services/key-validator/
+
+  # --- Deploy ---
+
+  deploy:
+    - name: Deploy overlay
+      run: kubectl apply -k k8s/overlays/${{ env.OVERLAY }}
+
+    - name: Wait for StatefulSet
+      run: kubectl rollout status statefulset/asd-tunnel -n ${{ env.NAMESPACE }} --timeout=180s
+
+    - name: Show pods
+      run: kubectl get pods -n ${{ env.NAMESPACE }} -o wide
+
+  # --- Shared Steps (internal, not CLI commands) ---
+
+  _port-forward:
+    - name: Port-forward validation-server
+      run: kubectl port-forward -n ${{ env.NAMESPACE }} svc/validation-server ${{ env.LOCAL_PORT }}:8080
+      background: true
+      backgroundTeardownCommand: "pkill -f 'port-forward.*validation-server.*${{ env.LOCAL_PORT }}' || true"
+
+    - name: Wait for port-forward
+      httpWaitFor:
+        url: "http://localhost:${{ env.LOCAL_PORT }}/health"
+        expectStatus: 200
+        intervalMs: 1000
+        timeoutMs: 15000
+
+  # --- Tunnels ---
+
+  tunnel:
+    - uses: _port-forward
+    - name: Create SSH tunnel to validation-server
+      run: |
+        ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR \
+          -p ${{ env.TUNNEL_SSH_PORT }} \
+          -N -R "${{ env.SUBDOMAIN }}:80:localhost:${{ env.LOCAL_PORT }}" \
+          ${{ env.TUNNEL_HOST }}
+      interactive: true
+
+  tunnel-auth:
+    - uses: _port-forward
+    - name: Create authenticated SSH tunnel (file-auth overlay)
+      run: |
+        ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR \
+          -o IdentitiesOnly=yes \
+          -p ${{ env.TUNNEL_SSH_PORT }} \
+          -i k8s/overlays/file-auth/ssh-keys/demo \
+          -N -R "${{ env.SUBDOMAIN }}:80:localhost:${{ env.LOCAL_PORT }}" \
+          ${{ env.TUNNEL_HOST }}
+      interactive: true
+
+  tunnel-client:
+    - uses: _port-forward
+    - name: Create tunnel with asd-tunnel client (auto-reconnect)
+      run: |
+        echo "Using asd-tunnel client with built-in reconnection"
+        echo "Unlike plain SSH, this automatically reconnects on network drops"
+        echo ""
+        asd-tunnel connect \
+          --no-auth \
+          --server ${{ env.TUNNEL_HOST }}:${{ env.TUNNEL_SSH_PORT }} \
+          -F ${{ env.SUBDOMAIN }}:localhost:${{ env.LOCAL_PORT }} \
+          --reconnect
+      interactive: true
+
+  # --- Validation ---
+
+  validate:
+    - name: Validate minimal overlay
+      run: kubectl kustomize k8s/overlays/minimal > /dev/null
+      expect: ""
+
+    - name: Validate file-auth overlay
+      run: kubectl kustomize k8s/overlays/file-auth > /dev/null
+
+    - name: Validate http-auth overlay
+      run: kubectl kustomize k8s/overlays/http-auth > /dev/null
+
+    - name: Validate with-caddy overlay
+      run: kubectl kustomize k8s/overlays/with-caddy > /dev/null
+
+    - name: Validate with-caddy-noauth overlay
+      run: kubectl kustomize k8s/overlays/with-caddy-noauth > /dev/null
+
+    - name: Validate rolling-upgrade overlay
+      run: kubectl kustomize k8s/overlays/rolling-upgrade > /dev/null
+
+    - name: Validate airgap overlay
+      run: kubectl kustomize k8s/overlays/airgap > /dev/null
+
+  # --- Benchmarks ---
+
+  bench:
+    - name: Verify tunnel is reachable
+      httpWaitFor:
+        url: "http://localhost:${{ env.TUNNEL_HTTP_PORT }}/health"
+        headers:
+          Host: "${{ env.SUBDOMAIN }}.${{ env.TUNNEL_DOMAIN }}"
+        expectStatus: 200
+        expectBody: "ok"
+        intervalMs: 2000
+        timeoutMs: 15000
+
+    - name: Roundtrip test — echo endpoint returns request metadata
+      http:
+        method: GET
+        url: "http://localhost:${{ env.TUNNEL_HTTP_PORT }}/echo"
+        headers:
+          Host: "${{ env.SUBDOMAIN }}.${{ env.TUNNEL_DOMAIN }}"
+          X-Request-ID: "bench-roundtrip-001"
+        expectStatus: 200
+        assertJson:
+          jsonpath: "$.request_id"
+          equals: "bench-roundtrip-001"
+
+    - name: Payload upload — 1MB SHA-256 integrity
+      run: |
+        dd if=/dev/urandom of=/tmp/bench-1m.bin bs=1048576 count=1 2>/dev/null
+        expected=$(sha256sum /tmp/bench-1m.bin | awk '{print $1}')
+        got=$(curl -sf -X POST --data-binary @/tmp/bench-1m.bin \
+          -H "Host: ${{ env.SUBDOMAIN }}.${{ env.TUNNEL_DOMAIN }}" \
+          "http://localhost:${{ env.TUNNEL_HTTP_PORT }}/hash" | jq -r '.sha256')
+        rm -f /tmp/bench-1m.bin
+        [ "$got" = "$expected" ] && echo "PASS: hash=$got" || { echo "FAIL: expected=$expected got=$got"; exit 1; }
+      expect: "PASS"
+
+    - name: Payload download — deterministic bytes integrity
+      run: |
+        curl -sf -D /tmp/bench-headers.txt -o /tmp/bench-dl.bin \
+          -H "Host: ${{ env.SUBDOMAIN }}.${{ env.TUNNEL_DOMAIN }}" \
+          "http://localhost:${{ env.TUNNEL_HTTP_PORT }}/payload/1048576"
+        expected=$(grep -i X-Payload-SHA256 /tmp/bench-headers.txt | tr -d '\r' | awk '{print $2}')
+        got=$(sha256sum /tmp/bench-dl.bin | awk '{print $1}')
+        rm -f /tmp/bench-dl.bin /tmp/bench-headers.txt
+        [ "$got" = "$expected" ] && echo "PASS: hash=$got" || { echo "FAIL: expected=$expected got=$got"; exit 1; }
+      expect: "PASS"
+
+    - name: Concurrent isolation — 10 parallel unique UUIDs
+      run: |
+        tmpdir=$(mktemp -d)
+        for i in $(seq 1 10); do
+          uuid=$(cat /proc/sys/kernel/random/uuid 2>/dev/null || uuidgen)
+          echo "$uuid" > "$tmpdir/uuid-$i"
+          curl -sf -H "X-Request-ID: $uuid" \
+            -H "Host: ${{ env.SUBDOMAIN }}.${{ env.TUNNEL_DOMAIN }}" \
+            "http://localhost:${{ env.TUNNEL_HTTP_PORT }}/echo" > "$tmpdir/result-$i" &
+        done
+        wait
+        pass=0; fail=0
+        for i in $(seq 1 10); do
+          expected=$(cat "$tmpdir/uuid-$i")
+          got=$(jq -r '.request_id' "$tmpdir/result-$i" 2>/dev/null)
+          [ "$got" = "$expected" ] && pass=$((pass+1)) || fail=$((fail+1))
+        done
+        rm -rf "$tmpdir"
+        echo "$pass/10 passed, $fail/10 failed"
+        [ "$fail" -eq 0 ] && echo "PASS" || { echo "FAIL"; exit 1; }
+      expect: "PASS"
+
+  bench-roundtrip:
+    - name: Run roundtrip benchmark (100 requests)
+      run: ./scripts/benchmark/test-roundtrip.sh ${{ env.SUBDOMAIN }}
+
+  bench-payload:
+    - name: Run payload integrity benchmark
+      run: ./scripts/benchmark/test-payload.sh ${{ env.SUBDOMAIN }}
+
+  bench-concurrent:
+    - name: Run concurrent isolation benchmark
+      run: ./scripts/benchmark/test-concurrent.sh ${{ env.SUBDOMAIN }}
+
+  bench-cross-pod:
+    - name: Run cross-pod NATS routing test
+      run: ./scripts/benchmark/test-cross-pod.sh ${{ env.SUBDOMAIN }}
+
+  bench-stress:
+    - uses: _port-forward
+    - name: "Stress test — 100 concurrent tunnels, sustained load, zero-downtime assertion"
+      run: ./scripts/benchmark/test-stress.sh 100 30
+      interactive: true
+
+  bench-auth:
+    - uses: _port-forward
+    - name: "Authentication tests — valid/invalid/revoked key verification"
+      run: ./scripts/benchmark/test-auth.sh
+      interactive: true
+
+  bench-auth-http:
+    - uses: _port-forward
+    - name: "HTTP auth integration — key-validator approve/reject/fail-closed"
+      run: ./scripts/benchmark/test-auth-http.sh
+      interactive: true
+
+  bench-resilience:
+    - uses: _port-forward
+    - name: "Pod failure recovery — delete pod, verify NATS re-routing"
+      run: ./scripts/benchmark/test-pod-failure.sh
+      interactive: true
+
+  bench-resource-limits:
+    - uses: _port-forward
+    - name: "Resource pressure — open 200 tunnels, monitor usage, verify recovery"
+      run: ./scripts/benchmark/test-resource-limits.sh
+      interactive: true
+
+  # --- Rolling Upgrade ---
+
+  rolling-upgrade:
+    - name: Verify tunnel reachable
+      httpWaitFor:
+        url: "http://localhost:${{ env.TUNNEL_HTTP_PORT }}/health"
+        headers:
+          Host: "${{ env.SUBDOMAIN }}.${{ env.TUNNEL_DOMAIN }}"
+        expectStatus: 200
+        intervalMs: 2000
+        timeoutMs: 15000
+
+    - name: Trigger rolling restart
+      run: kubectl rollout restart statefulset/asd-tunnel -n ${{ env.NAMESPACE }}
+
+    - name: Wait for rollout
+      run: kubectl rollout status statefulset/asd-tunnel -n ${{ env.NAMESPACE }} --timeout=300s
+
+    - name: Verify tunnel still works after upgrade
+      http:
+        method: GET
+        url: "http://localhost:${{ env.TUNNEL_HTTP_PORT }}/echo"
+        headers:
+          Host: "${{ env.SUBDOMAIN }}.${{ env.TUNNEL_DOMAIN }}"
+          X-Request-ID: "post-upgrade-check"
+        expectStatus: 200
+        assertJson:
+          jsonpath: "$.request_id"
+          equals: "post-upgrade-check"
+
+  rolling-upgrade-full:
+    - name: Run full rolling upgrade with continuous monitoring
+      run: ./scripts/rolling-upgrade/run-upgrade.sh ${{ env.SUBDOMAIN }}
+
+  # --- Documentation Demo ---
+
+  docs:
+    - name: Verify cluster is running
+      portCheck:
+        port: ${{ env.TUNNEL_SSH_PORT }}
+        timeoutMs: 5000
+
+    - name: Copy asd-tunnel binary to build context
+      run: cp ~/.local/bin/asd-tunnel services/docs-server/asd-tunnel
+
+    - name: Build docs-server container
+      run: docker build -t docs-server:local services/docs-server/
+
+    - name: Clean up binary copy
+      run: rm -f services/docs-server/asd-tunnel
+
+    - name: Start docs container (Python server + asd-tunnel client)
+      run: |
+        docker run --rm --name asd-docs-demo \
+          --network host \
+          -v "$(pwd):/docs:ro" \
+          -e TUNNEL_HOST=${{ env.TUNNEL_HOST }} \
+          -e TUNNEL_SSH_PORT=${{ env.TUNNEL_SSH_PORT }} \
+          -e DOCS_SUBDOMAIN=${{ env.DOCS_SUBDOMAIN }} \
+          -e DOCS_PORT=8080 \
+          docs-server:local
+      background: true
+      backgroundTeardownCommand: "docker stop asd-docs-demo 2>/dev/null || true"
+
+    - name: Wait for tunnel
+      httpWaitFor:
+        url: "https://127.0.0.1:${{ env.TUNNEL_CADDY_PORT }}/"
+        headers:
+          Host: "${{ env.DOCS_SUBDOMAIN }}.${{ env.TUNNEL_DOMAIN }}"
+        expectStatus: 200
+        intervalMs: 1000
+        timeoutMs: 30000
+        insecure: true
+
+    - name: Docs ready
+      run: |
+        echo ""
+        echo "================================================"
+        echo "  Documentation served through ASD Tunnel"
+        echo "  https://${{ env.DOCS_SUBDOMAIN }}.tunnel.localhost:${{ env.TUNNEL_CADDY_PORT }}"
+        echo "================================================"
+        echo ""
+        echo "  Architecture:"
+        echo "    Browser (HTTPS) → NodePort ${{ env.TUNNEL_CADDY_PORT }}"
+        echo "      → Caddy sidecar (TLS on 8443) → HTTP muxer (8081)"
+        echo "        → SSH channel → asd-tunnel client (container)"
+        echo "          → Python docs server (same container, port 8080)"
+        echo ""
+        echo "  No /etc/hosts needed — .localhost resolves to 127.0.0.1 (RFC 6761)"
+        echo ""
+        echo "Press Ctrl+C to stop all services."
+
+    - interactive: true
+
+  # --- Status ---
+
+  status:
+    - name: Pods
+      run: kubectl get pods -n ${{ env.NAMESPACE }} -o wide
+
+    - name: Services
+      run: kubectl get svc -n ${{ env.NAMESPACE }}
+
+    - name: SSH port reachable
+      portCheck:
+        port: ${{ env.TUNNEL_SSH_PORT }}
+        timeoutMs: 3000
+
+    - name: HTTP port reachable
+      portCheck:
+        port: ${{ env.TUNNEL_HTTP_PORT }}
+        timeoutMs: 3000

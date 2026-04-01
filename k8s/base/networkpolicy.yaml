@@ -1,0 +1,141 @@
+# NetworkPolicies restrict inter-pod traffic to only what's needed.
+#
+# Traffic flow:
+#   External → NodePort → asd-tunnel (SSH 2222, HTTP 8081)
+#   asd-tunnel → asd-tunnel (NATS 4222/6222, HTTP proxy 8081)
+#   asd-tunnel → validation-server (8080) [via SSH -R tunnel]
+#   asd-tunnel → key-validator (3000) [HTTP auth mode only]
+#
+# Default-deny for the namespace, then allow only required paths.
+
+# Default deny all ingress and egress in the namespace
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny
+  namespace: asd-tunnel-demo
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+
+---
+# Tunnel pods: accept inbound SSH/HTTP from anywhere (NodePort),
+# allow NATS peering between tunnel pods, allow DNS lookups,
+# and allow egress to key-validator for HTTP auth.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-tunnel
+  namespace: asd-tunnel-demo
+spec:
+  podSelector:
+    matchLabels:
+      app: asd-tunnel
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # SSH and HTTP from external (NodePort)
+    - ports:
+        - port: 2222
+          protocol: TCP
+        - port: 8081
+          protocol: TCP
+    # NATS cluster peering from other tunnel pods
+    - from:
+        - podSelector:
+            matchLabels:
+              app: asd-tunnel
+      ports:
+        - port: 4222
+          protocol: TCP
+        - port: 6222
+          protocol: TCP
+  egress:
+    # DNS resolution (kube-dns)
+    - ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+    # NATS cluster peering + cross-pod HTTP proxy to other tunnel pods
+    - to:
+        - podSelector:
+            matchLabels:
+              app: asd-tunnel
+      ports:
+        - port: 4222
+          protocol: TCP
+        - port: 6222
+          protocol: TCP
+        - port: 8081
+          protocol: TCP
+    # HTTP auth: key-validator
+    - to:
+        - podSelector:
+            matchLabels:
+              app: key-validator
+      ports:
+        - port: 3000
+          protocol: TCP
+
+---
+# Validation-server: accept traffic from tunnel pods only (via port-forward).
+# In practice, traffic arrives via port-forward from host, which appears as
+# the kube-proxy IP. We allow from tunnel pods for in-cluster routing.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-validation-server
+  namespace: asd-tunnel-demo
+spec:
+  podSelector:
+    matchLabels:
+      app: validation-server
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Accept from any source — needed for port-forward from host
+    - ports:
+        - port: 8080
+          protocol: TCP
+  egress:
+    # DNS resolution
+    - ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+
+---
+# Key-validator: accept traffic from tunnel pods only.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-key-validator
+  namespace: asd-tunnel-demo
+spec:
+  podSelector:
+    matchLabels:
+      app: key-validator
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: asd-tunnel
+      ports:
+        - port: 3000
+          protocol: TCP
+  egress:
+    # DNS resolution
+    - ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
