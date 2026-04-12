@@ -1,0 +1,3 @@
+pod-0: NATS_PROXY owner=asd-tunnel-2
+pod-1: NATS_PROXY owner=asd-tunnel-2
+pod-2: DIRECT owner=asd-tunnel-2

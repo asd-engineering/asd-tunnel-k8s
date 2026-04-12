@@ -1,0 +1,139 @@
+[14:12:18.112] === DRAIN TEST: Zero-Downtime Upgrade Proof ===
+[14:12:18.113] 
+[14:12:18.114] --- Phase 0: Pre-flight ---
+asd-tunnel-0   1/1   Running   0     68s   10.244.0.37   asd-tunnel-demo-control-plane   <none>   <none>
+asd-tunnel-1   1/1   Running   0     76s   10.244.0.36   asd-tunnel-demo-control-plane   <none>   <none>
+asd-tunnel-2   1/1   Running   0     84s   10.244.0.35   asd-tunnel-demo-control-plane   <none>   <none>
+
+[14:12:18.162] OK: 3 asd-tunnel pods running
+[14:12:18.163] 
+[14:12:18.164] --- Phase 1: Create SSH tunnel (targeting pod-2) ---
+[14:12:20.170] OK: Port-forward to validation-server on :18080
+[14:12:26.172] Waiting for tunnel to establish...
+[14:12:26.183] OK: Tunnel established — owner: asd-tunnel-2
+[14:12:26.184] 
+[14:12:26.185] --- Phase 2: Verify NATS cross-pod routing ---
+[14:12:26.186] Tunnel owner is asd-tunnel-2. Testing all pods reach it via NATS proxy.
+[14:12:28.221] OK: pod-0 (10.244.0.37): NATS proxy -> asd-tunnel-2 (cross-pod routing works!)
+[14:12:30.255] OK: pod-1 (10.244.0.36): NATS proxy -> asd-tunnel-2 (cross-pod routing works!)
+[14:12:32.290] OK: pod-2 (10.244.0.35): direct (tunnel owner, served locally)
+[14:12:32.290] OK: All pods can reach the tunnel (2 via NATS proxy, 1 direct)
+[14:12:32.291] 
+[14:12:32.292] --- Phase 3: Start continuous HTTP monitor ---
+[14:12:37.295] Baseline: 25 requests, 25 successful (200)
+[14:12:37.295] OK: HTTP monitoring baseline established
+[14:12:37.297] 
+[14:12:37.297] --- Phase 4: Rolling restart (pod-2 first, then pod-1, then pod-0) ---
+[14:12:37.333] Pre-restart pods:
+[14:12:37.338]   asd-tunnel-0   10.244.0.37   Running
+[14:12:37.338]   asd-tunnel-1   10.244.0.36   Running
+[14:12:37.339]   asd-tunnel-2   10.244.0.35   Running
+[14:12:37.341] 
+[14:12:37.342] >>> ROLLING RESTART at 14:12:37.340 <<<
+statefulset.apps/asd-tunnel restarted
+[14:12:37.375] Waiting for rollout to complete...
+Waiting for partitioned roll out to finish: 0 out of 3 new pods have been updated...
+Waiting for 1 pods to be ready...
+Waiting for 1 pods to be ready...
+Waiting for 1 pods to be ready...
+Waiting for partitioned roll out to finish: 1 out of 3 new pods have been updated...
+Waiting for 1 pods to be ready...
+Waiting for 1 pods to be ready...
+Waiting for 1 pods to be ready...
+Waiting for partitioned roll out to finish: 2 out of 3 new pods have been updated...
+Waiting for 1 pods to be ready...
+Waiting for 1 pods to be ready...
+Waiting for 1 pods to be ready...
+partitioned roll out complete: 3 new pods have been updated...
+[14:13:01.248] >>> ROLLING RESTART COMPLETE at 14:13:01.247 (24s) <<<
+[14:13:01.274] Waiting 25s for SSH reconnect + tunnel re-registration...
+[14:13:26.301] Post-restart pods:
+[14:13:26.302]   asd-tunnel-0   10.244.0.40   Running
+[14:13:26.303]   asd-tunnel-1   10.244.0.39   Running
+[14:13:26.303]   asd-tunnel-2   10.244.0.38   Running
+[14:13:26.304] 
+[14:13:26.305] ==========================================
+[14:13:26.306]               RESULTS
+[14:13:26.306] ==========================================
+[14:13:26.980] 
+[14:13:26.980] HTTP Monitor:
+[14:13:26.981]   Total requests:     214 (baseline: 25, during restart: 189)
+[14:13:26.982]   200 OK:             205
+[14:13:26.982]   502 Bad Gateway:    0
+[14:13:26.983]   404 Not Found:      3
+[14:13:26.984]   000 (timeout):      6
+[14:13:26.984]   Other:              0
+[14:13:26.986]   Success rate:       95.7%
+[14:13:26.986]   Max gap between 200s: 5240ms (~5s) at 14:12:50.425
+[14:13:26.987] 
+[14:13:26.988] Non-200 responses:
+[14:12:39.453] HTTP #26: status=000 latency=2006ms
+[14:12:41.660] HTTP #27: status=000 latency=2006ms
+[14:12:47.393] HTTP #45: status=000 latency=2006ms
+[14:12:47.599] HTTP #46: status=404 latency=5ms
+[14:12:47.804] HTTP #47: status=404 latency=4ms
+[14:12:48.010] HTTP #48: status=404 latency=5ms
+[14:12:50.219] HTTP #49: status=000 latency=2006ms
+[14:12:53.312] HTTP #64: status=000 latency=4ms
+[14:12:55.520] HTTP #65: status=000 latency=2006ms
+[14:13:26.989] 
+[14:13:26.990] SSH Events:
+[14:13:26.991]   Connections:   4
+[14:13:26.992]   Disconnects:   3
+[14:13:26.992]   Full log:
+[14:12:22.172] SSH-CONNECT #1: connecting to localhost:22222...
+Connection to localhost closed by remote host.
+[14:12:38.409] SSH-DISCONNECT #1: exit_code=255, reconnecting in 0.2s...
+[14:12:38.610] SSH-CONNECT #2: connecting to localhost:30022...
+Connection to localhost closed by remote host.
+[14:12:45.253] SSH-DISCONNECT #2: exit_code=255, reconnecting in 0.2s...
+[14:12:45.454] SSH-CONNECT #3: connecting to localhost:30022...
+Connection timed out during banner exchange
+[14:12:47.459] SSH-DISCONNECT #3: exit_code=255, reconnecting in 0.2s...
+[14:12:47.660] SSH-CONNECT #4: connecting to localhost:30022...
+[14:13:26.993] 
+[14:13:26.994] Cross-Pod NATS Routing (pre-restart):
+[14:13:26.996]   pod-0: NATS_PROXY owner=asd-tunnel-2
+[14:13:26.996]   pod-1: NATS_PROXY owner=asd-tunnel-2
+[14:13:26.997]   pod-2: DIRECT owner=asd-tunnel-2
+[14:13:26.997] 
+[14:13:26.998] Drain Sequence (per pod):
+[14:13:26.999]   [pod-0] 2026/04/12 - 12:12:36 | drain-proof.tunnel.local:30080 |[97;42m 200 [0m|     979.653µs |      10.244.0.1 |[97;44m GET     [0m /echo
+[14:13:27.000]   [pod-0] 2026/04/12 - 12:12:37 | drain-proof.tunnel.local:30080 |[97;42m 200 [0m|     624.403µs |      10.244.0.1 |[97;44m GET     [0m /echo
+[14:13:27.001]   [pod-0] {"level":"warn","error":"context canceled","hostname":"drain-proof.tunnel.local","pod_ip":"10.244.0.35","time":"2026-04-12T12:12:41Z","message":"Cross-pod proxy error"}
+[14:13:27.001]   [pod-0] 2026/04/12 - 12:12:41 | drain-proof.tunnel.local:30080 |[97;41m 503 [0m|  2.002050925s |      10.244.0.1 |[97;44m GET     [0m /echo
+[14:13:27.002]   [pod-0] 2026/04/12 - 12:12:42 | drain-proof.tunnel.local:30080 |[97;42m 200 [0m|    1.673406ms |      10.244.0.1 |[97;44m GET     [0m /echo
+[14:13:27.002]   [pod-0] 2026/04/12 - 12:12:43 | drain-proof.tunnel.local:30080 |[97;42m 200 [0m|     733.423µs |      10.244.0.1 |[97;44m GET     [0m /echo
+[14:13:27.003]   [pod-1] {"level":"warn","error":"context canceled","hostname":"drain-proof.tunnel.local","pod_ip":"10.244.0.35","time":"2026-04-12T12:12:39Z","message":"Cross-pod proxy error"}
+[14:13:27.004]   [pod-1] {"level":"info","event":"tunnel_start","type":"http","host":"drain-proof.tunnel.local","path":"","client_hash":"54dca846","time":"2026-04-12T12:12:39Z","message":"HTTP forwarding started"}
+[14:13:27.004]   [pod-1] 2026/04/12 - 12:12:41 | drain-proof.tunnel.local:30080 |[97;41m 502 [0m|  4.001537494s |      10.244.0.1 |[97;44m GET     [0m /echo
+[14:13:27.005]   [pod-1] 2026/04/12 - 12:12:41 | drain-proof.tunnel.local:30080 |[97;42m 200 [0m|    1.337585ms |      10.244.0.1 |[97;44m GET     [0m /echo
+[14:13:27.006]   [pod-1] 2026/04/12 - 12:12:42 | drain-proof.tunnel.local:30080 |[97;42m 200 [0m|     482.891µs |      10.244.0.1 |[97;44m GET     [0m /echo
+[14:13:27.006]   [pod-1] 2026/04/12 - 12:12:42 | drain-proof.tunnel.local:30080 |[97;42m 200 [0m|     739.903µs |      10.244.0.1 |[97;44m GET     [0m /echo
+[14:13:27.007]   [pod-2] 2026/04/12 - 12:12:36 | drain-proof.tunnel.local:30080 |[97;42m 200 [0m|    1.311105ms |      10.244.0.1 |[97;44m GET     [0m /echo
+[14:13:27.008]   [pod-2] 2026/04/12 - 12:12:36 | drain-proof.tunnel.local:30080 |[97;42m 200 [0m|    1.337615ms |      10.244.0.1 |[97;44m GET     [0m /echo
+[14:13:27.008]   [pod-2] 2026/04/12 - 12:12:36 | drain-proof.tunnel.local:30080 |[97;42m 200 [0m|     816.493µs |      10.244.0.1 |[97;44m GET     [0m /echo
+[14:13:27.009]   [pod-2] 2026/04/12 - 12:12:37 | drain-proof.tunnel.local:30080 |[97;42m 200 [0m|     514.361µs |      10.244.0.1 |[97;44m GET     [0m /echo
+[14:13:27.009]   [pod-2] 2026/04/12 - 12:12:37 | drain-proof.tunnel.local:30080 |[97;42m 200 [0m|     795.613µs |      10.244.0.1 |[97;44m GET     [0m /echo
+[14:13:27.010]   [pod-2] {"level":"info","signal":"terminated","time":"2026-04-12T12:12:37Z","message":"Received signal, initiating graceful shutdown"}
+[14:13:27.010] 
+[14:13:27.011] ==========================================
+[14:13:27.011]               VERDICT
+[14:13:27.012] ==========================================
+[14:13:27.013] 
+[14:13:27.013] PASS: Zero 502 errors — no request hit a dead/draining pod
+[14:13:27.014] PASS: 3 HTTP 404(s) during SSH reconnect — within tolerance (<=10)
+[14:13:27.015] PASS: Max gap between 200s: 5240ms (~5s) — well under 10s threshold
+[14:13:27.016] PASS: SSH client reconnected during restart (first reconnect at 14:12:38.610)
+[14:13:27.017] PASS: NATS cross-pod routing: 2/2 non-owner pods proxied via NATS
+[14:13:27.019] PASS: All 3 pods logged graceful drain sequence
+[14:13:27.021] PASS: HTTP recovered: 10/10 last requests = 200
+[14:13:27.021] PASS: Success rate: 95.7% (>= 95% threshold)
+[14:13:27.022] 
+[14:13:27.022] ==========================================
+[14:13:27.023]   8/8 CHECKS PASSED
+[14:13:27.023]   Zero-downtime graceful drain: PROVEN
+[14:13:27.024] ==========================================
+[14:13:27.025] 
+[14:13:27.025] Full logs: scripts/drain-results/
+[14:13:27.026] Cleaning up...
