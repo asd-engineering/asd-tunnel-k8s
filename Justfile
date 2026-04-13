@@ -143,6 +143,16 @@ services:
 status:
     kubectl get all -n {{namespace}}
 
+# --- Tests --- (asd run test-drain / asd run test-hardkill)
+
+# Prove zero-downtime graceful drain (rolling restart)
+test-drain:
+    ./scripts/test-drain.sh
+
+# Prove NATS retry recovers HTTP after ungraceful pod death
+test-hardkill:
+    ./scripts/test-hardkill-recovery.sh
+
 # Follow tunnel pod logs
 logs pod="0":
     kubectl logs -n {{namespace}} asd-tunnel-{{pod}} -c asd-tunnel -f
