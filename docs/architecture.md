@@ -58,6 +58,114 @@ HTTP Client ─(30443)─┤  Caddy sidecar (tls internal :8443)           │
 | `tunnel.lookup.<subdomain>` | Request-reply to find tunnel owner |
 | `tunnel.heartbeat` | Periodic cluster health |
 
+## High Availability
+
+Every pod can serve any tunnel's HTTP requests — either directly (local) or via cross-pod proxy. This means the cluster acts as a built-in load balancer at the application layer.
+
+### How Any Pod Serves Any Tunnel
+
+```
+                        ┌───────────────────────┐
+                        │   curl myapp.tunnel.io │
+                        └───────────┬───────────┘
+                                    │
+                         ┌──────────▼──────────┐
+                         │   K8s Service        │
+                         │   (NodePort :30080)  │
+                         │   picks random pod   │
+                         └──────────┬───────────┘
+                                    │
+               ┌────────────────────┼────────────────────┐
+               ▼                    ▼                     ▼
+          ┌─────────┐         ┌─────────┐           ┌─────────┐
+          │  Pod-0  │         │  Pod-1  │           │  Pod-2  │
+          │  :8081  │         │  :8081  │           │  :8081  │
+          └────┬────┘         └────┬────┘           └────┬────┘
+               │                   │                     │
+        ┌──────┴──────┐     ┌──────┴──────┐       ┌──────┴──────┐
+        │ HTTP Muxer  │     │ HTTP Muxer  │       │ HTTP Muxer  │
+        │ Host lookup │     │ Host lookup │       │ Host lookup  │
+        └──┬───────┬──┘     └─────────────┘       └─────────────┘
+           │       │
+      LOCAL?    NOT LOCAL?
+        │          │
+        ▼          ▼
+   ┌────────┐  ┌──────────────────────────┐
+   │ Direct │  │  NATS Registry Lookup    │
+   │ proxy  │  │  cache → PodIP           │
+   │ to SSH │  └───────────┬──────────────┘
+   │channel │              │
+   └───┬────┘         proxyToPod()
+       │           (HTTP → PodIP:8081)
+       ▼                   │
+   ┌────────┐              ▼
+   │Backend │          That pod handles
+   │Service │          it as LOCAL
+   └────────┘
+```
+
+The K8s Service has no knowledge of which pod owns which tunnel. All routing intelligence lives inside the pods via NATS pub/sub.
+
+### Graceful Drain (Rolling Updates) — Zero Downtime
+
+During rolling updates, pods shut down gracefully. The client reconnects to a surviving pod before the old pod is fully terminated.
+
+```
+t=0s   K8s sends SIGTERM to Pod-2
+       │
+       ├─ Pod-2 marks itself as "draining"
+       ├─ Pod-2 closes SSH listener (:2222)
+       └─ Readiness probe fails → K8s stops routing NEW traffic here
+
+t=1s   Pod-2 publishes NATS "unregister" for all its tunnels
+       └─ Pod-0 and Pod-1 remove Pod-2 entries from their cache
+
+t=2s   Pod-2 sends SSH "disconnect" to all connected clients
+       └─ Clients reconnect IMMEDIATELY (no 30s TCP timeout wait)
+
+t=3s   Client reconnects → K8s routes to Pod-0 or Pod-1
+       └─ Re-registers tunnel → NATS "register" published
+       └─ All pods know the tunnel's new location
+
+t=5s   Pod-2 fully shut down. No requests lost.
+```
+
+**Key design:** The server sends an explicit SSH disconnect message so the client reconnects instantly instead of waiting for TCP keepalive to detect the dead connection.
+
+### Hard-Kill Recovery (Pod Crash / OOMKill)
+
+When a pod dies unexpectedly (SIGKILL, OOM, node failure), there is no graceful shutdown — no unregister events are sent. The system self-heals through two parallel mechanisms:
+
+```
+t=0s   Pod-2 killed instantly (no cleanup)
+       ├─ NATS cache on Pod-0/Pod-1 still says "Pod-2 owns myapp"  (STALE)
+       └─ SSH client's TCP connection receives RST
+
+CLIENT RECOVERY (restores the tunnel):
+
+t=1s   Client detects disconnect → exponential backoff (~1s first attempt)
+t=2s   Client reconnects to K8s Service → lands on Pod-0 or Pod-1
+       └─ Re-registers tunnel on new pod → NATS "register" published
+
+HTTP RECOVERY (serves requests during the gap):
+
+t=3s   HTTP request arrives at Pod-1 for myapp.tunnel.io
+       ├─ Pod-1 local lookup: NOT HERE
+       ├─ Pod-1 NATS cache: "Pod-2 owns it" (stale!)
+       ├─ Pod-1 proxyToPod(Pod-2) → TIMEOUT after 3 seconds
+       │
+       ├─ Pod-1 deletes stale cache entry
+       ├─ Pod-1 broadcasts: "who has myapp?" (NATS request/reply)
+       ├─ Pod-0 responds: "I have it now!"
+       └─ Pod-1 retries proxyToPod(Pod-0) → SUCCESS
+```
+
+| Scenario | Downtime | Mechanism |
+|----------|----------|-----------|
+| Rolling update (graceful) | **0** | SSH disconnect → instant client reconnect |
+| Pod crash (hard kill) | **~3-5s** (first request only) | NATS retry: timeout → fresh lookup → re-proxy |
+| Node failure | **~3-5s** + client reconnect | Same as hard kill, plus client finds new pod |
+
 ## StatefulSet Design
 
 The StatefulSet provides:
