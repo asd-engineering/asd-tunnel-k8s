@@ -47,8 +47,8 @@ docker build -t key-validator:local "$PROJECT_ROOT/services/key-validator/" -q
 echo "[3/4] Checking tunnel image..."
 if ! docker image inspect asd-tunnel:k8s-demo >/dev/null 2>&1; then
   echo "  Pulling from GHCR (one-time download)..."
-  docker pull ghcr.io/asd-engineering/asd-cli:asd-tunnel-latest
-  docker tag ghcr.io/asd-engineering/asd-cli:asd-tunnel-latest asd-tunnel:k8s-demo
+  docker pull "${TUNNEL_IMAGE:?TUNNEL_IMAGE not set — run 'asd env init' first}"
+  docker tag "${TUNNEL_IMAGE}" asd-tunnel:k8s-demo
 fi
 
 # ─── Step 3: Export images ───────────────────────────────────────────────────

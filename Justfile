@@ -48,8 +48,8 @@ build-validator:
 
 # Pull tunnel image from GHCR and load into kind
 load-tunnel-image:
-    docker pull ghcr.io/asd-engineering/asd-cli:asd-tunnel-latest
-    docker tag ghcr.io/asd-engineering/asd-cli:asd-tunnel-latest asd-tunnel:k8s-demo
+    docker pull ${TUNNEL_IMAGE}
+    docker tag ${TUNNEL_IMAGE} asd-tunnel:k8s-demo
     kind load docker-image asd-tunnel:k8s-demo --name {{cluster_name}}
 
 # Load all images into kind cluster
