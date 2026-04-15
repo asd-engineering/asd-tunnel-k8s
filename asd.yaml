@@ -25,8 +25,8 @@ automation:
     - name: Load tunnel image
       run: |
         if ! docker image inspect asd-tunnel:k8s-demo >/dev/null 2>&1; then
-          docker pull ghcr.io/asd-engineering/asd-tunnel-server:latest
-          docker tag ghcr.io/asd-engineering/asd-tunnel-server:latest asd-tunnel:k8s-demo
+          docker pull ghcr.io/asd-engineering/asd-cli:asd-tunnel-latest
+          docker tag ghcr.io/asd-engineering/asd-cli:asd-tunnel-latest asd-tunnel:k8s-demo
         fi
         kind load docker-image asd-tunnel:k8s-demo --name ${{ env.CLUSTER_NAME }}
 
@@ -62,8 +62,8 @@ automation:
     - name: Load tunnel image
       run: |
         if ! docker image inspect asd-tunnel:k8s-demo >/dev/null 2>&1; then
-          docker pull ghcr.io/asd-engineering/asd-tunnel-server:latest
-          docker tag ghcr.io/asd-engineering/asd-tunnel-server:latest asd-tunnel:k8s-demo
+          docker pull ghcr.io/asd-engineering/asd-cli:asd-tunnel-latest
+          docker tag ghcr.io/asd-engineering/asd-cli:asd-tunnel-latest asd-tunnel:k8s-demo
         fi
         kind load docker-image asd-tunnel:k8s-demo --name ${{ env.CLUSTER_NAME }}
 

@@ -35,7 +35,7 @@ if $BUILD_SERVICES; then
   echo "Building and loading images..."
 
   # Pull tunnel image from GHCR (public) and load into kind
-  TUNNEL_IMAGE="${TUNNEL_IMAGE:-ghcr.io/asd-engineering/asd-tunnel-server:latest}"
+  TUNNEL_IMAGE="${TUNNEL_IMAGE:-ghcr.io/asd-engineering/asd-cli:asd-tunnel-latest}"
   echo "  Pulling tunnel image: $TUNNEL_IMAGE"
   docker pull "$TUNNEL_IMAGE"
   docker tag "$TUNNEL_IMAGE" asd-tunnel:k8s-demo

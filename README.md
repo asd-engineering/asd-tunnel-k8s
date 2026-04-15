@@ -257,7 +257,7 @@ docs/                      # Architecture, auth, benchmarking, air-gap, producti
 The multi-arch image is available on GHCR:
 
 ```
-ghcr.io/asd-engineering/asd-tunnel-server:latest
+ghcr.io/asd-engineering/asd-cli:asd-tunnel-latest
 ```
 
 For kind clusters, `asd run quickstart` handles pulling, tagging, and loading the image automatically. The StatefulSet uses `asd-tunnel:k8s-demo` with `imagePullPolicy: IfNotPresent` so kind uses the pre-loaded image.
