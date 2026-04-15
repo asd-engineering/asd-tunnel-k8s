@@ -103,7 +103,9 @@ HTTP Client ─(30080)── NodePort ── HTTP muxer ── SSH channel ─�
 
 Each tunnel pod runs SSH (port 2222) and an HTTP muxer (port 8081). Pods discover each other via NATS over a headless service. When an HTTP request arrives for a tunnel on a different pod, NATS routes the lookup and the request is proxied cross-pod.
 
-See [docs/architecture.md](docs/architecture.md) for the full component diagram and data flow.
+**Every pod can serve any tunnel** — the cluster provides built-in load balancing at the application layer. Rolling updates have zero downtime; pod crashes self-heal in ~3-5 seconds via NATS retry.
+
+See [docs/architecture.md](docs/architecture.md) for the full component diagram, data flow, and high-availability design.
 
 ## Available Commands
 
@@ -254,11 +256,7 @@ docs/                      # Architecture, auth, benchmarking, air-gap, producti
 
 ## Image
 
-The multi-arch image is available on GHCR:
-
-```
-ghcr.io/asd-engineering/asd-tunnel-server:latest
-```
+The tunnel image is configured via `TUNNEL_IMAGE` in `tpl.env` (default: `ghcr.io/asd-engineering/asd-tunnel:latest`).
 
 For kind clusters, `asd run quickstart` handles pulling, tagging, and loading the image automatically. The StatefulSet uses `asd-tunnel:k8s-demo` with `imagePullPolicy: IfNotPresent` so kind uses the pre-loaded image.
 

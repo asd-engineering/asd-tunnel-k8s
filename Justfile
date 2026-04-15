@@ -48,8 +48,8 @@ build-validator:
 
 # Pull tunnel image from GHCR and load into kind
 load-tunnel-image:
-    docker pull ghcr.io/asd-engineering/asd-tunnel-server:latest
-    docker tag ghcr.io/asd-engineering/asd-tunnel-server:latest asd-tunnel:k8s-demo
+    docker pull ${TUNNEL_IMAGE}
+    docker tag ${TUNNEL_IMAGE} asd-tunnel:k8s-demo
     kind load docker-image asd-tunnel:k8s-demo --name {{cluster_name}}
 
 # Load all images into kind cluster
@@ -142,6 +142,16 @@ services:
 # Show all resources
 status:
     kubectl get all -n {{namespace}}
+
+# --- Tests --- (asd run test-drain / asd run test-hardkill)
+
+# Prove zero-downtime graceful drain (rolling restart)
+test-drain:
+    ./scripts/test-drain.sh
+
+# Prove NATS retry recovers HTTP after ungraceful pod death
+test-hardkill:
+    ./scripts/test-hardkill-recovery.sh
 
 # Follow tunnel pod logs
 logs pod="0":

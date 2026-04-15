@@ -7,6 +7,8 @@
 # Benchmark results
 results.json
 scripts/rolling-upgrade/*.log
+scripts/drain-results/
+scripts/hardkill-results/
 
 # OS
 .DS_Store
