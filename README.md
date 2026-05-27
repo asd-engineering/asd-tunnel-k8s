@@ -42,17 +42,19 @@ asd env init              # set up environment variables
 asd run quickstart        # create kind cluster + deploy
 ```
 
-Wait for the output to show all pods as `Running`. Then, in a **second terminal**:
+Wait for the output to show all pods as `Running`.
+
+**Step 3 — Create a tunnel (open a second terminal):**
 
 ```bash
-# 3. Create a tunnel
 asd run tunnel
 ```
 
-This starts a port-forward and opens an SSH tunnel. Keep this terminal open. In a **third terminal**:
+Keep this terminal open — the tunnel must stay active.
+
+**Step 4 — Test it (open a third terminal):**
 
 ```bash
-# 4. Test it
 curl -s --resolve "app.tunnel.local:30080:127.0.0.1" \
   http://app.tunnel.local:30080/echo | jq .
 ```
@@ -81,10 +83,11 @@ curl -s --resolve "app.tunnel.local:30080:127.0.0.1" \
 }
 ```
 
-If you see this, the tunnel is working. You can now run the benchmark suite:
+If you see this, the tunnel is working.
+
+**Step 5 — Run benchmarks (same terminal):**
 
 ```bash
-# 5. Run benchmarks
 asd run bench
 ```
 
@@ -103,6 +106,13 @@ asd run bench
 ```bash
 asd run teardown            # Deletes the kind cluster
 ```
+
+### Next Steps
+
+- [Authentication modes](docs/authentication.md) — file-based and HTTP-based auth
+- [Benchmarking](docs/benchmarking.md) — understanding the test suite
+- [Rolling upgrades](docs/rolling-upgrade.md) — zero-downtime upgrade verification
+- [Architecture](docs/architecture.md) — component design and data flow
 
 ## Architecture
 
@@ -141,7 +151,6 @@ OVERLAY=file-auth asd run deploy
 
 | Guide | Description |
 |-------|-------------|
-| [Quick Start](docs/quickstart.md) | Step-by-step first setup |
 | [Architecture](docs/architecture.md) | Component diagram and data flow |
 | [Authentication](docs/authentication.md) | File-auth and HTTP-auth setup |
 | [Benchmarking](docs/benchmarking.md) | Test suite details and results |
