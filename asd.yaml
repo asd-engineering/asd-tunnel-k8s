@@ -13,34 +13,41 @@ features:
 automation:
   # --- Cluster Lifecycle ---
 
+  setup:
+    - name: Check prerequisites (dry-run)
+      run: ./setup --dry-run
+
   quickstart:
+    - name: Verify prerequisites
+      run: ./setup
+
     - name: Create kind cluster
       run: ./scripts/setup-cluster.sh ${{ env.CLUSTER_NAME }}
       skipWhen:
         command: "kind get clusters 2>/dev/null | grep -q ${{ env.CLUSTER_NAME }}"
 
     - name: Build validation-server image
-      run: docker build -t validation-server:local services/validation-server/
+      run: docker build -q -t validation-server:local services/validation-server/ && echo "Built validation-server:local"
 
-    - name: Load tunnel image
+    - name: Load images into kind
       run: |
         if ! docker image inspect asd-tunnel:k8s-demo >/dev/null 2>&1; then
-          docker pull ${{ env.TUNNEL_IMAGE }}
+          echo "Pulling tunnel image..."
+          docker pull -q ${{ env.TUNNEL_IMAGE }}
           docker tag ${{ env.TUNNEL_IMAGE }} asd-tunnel:k8s-demo
         fi
-        kind load docker-image asd-tunnel:k8s-demo --name ${{ env.CLUSTER_NAME }}
-
-    - name: Load validation-server image
-      run: kind load docker-image validation-server:local --name ${{ env.CLUSTER_NAME }}
+        echo "Loading asd-tunnel:k8s-demo..."
+        kind load docker-image asd-tunnel:k8s-demo --name ${{ env.CLUSTER_NAME }} 2>&1 | tail -1
+        echo "Loading validation-server:local..."
+        kind load docker-image validation-server:local --name ${{ env.CLUSTER_NAME }} 2>&1 | tail -1
 
     - name: Deploy minimal overlay
       run: kubectl apply -k k8s/overlays/minimal
 
-    - name: Wait for StatefulSet rollout
-      run: kubectl rollout status statefulset/asd-tunnel -n ${{ env.NAMESPACE }} --timeout=180s
-
-    - name: Wait for validation-server
-      run: kubectl rollout status deployment/validation-server -n ${{ env.NAMESPACE }} --timeout=60s
+    - name: Wait for rollout
+      run: |
+        kubectl rollout status statefulset/asd-tunnel -n ${{ env.NAMESPACE }} --timeout=180s 2>&1 | tail -1
+        kubectl rollout status deployment/validation-server -n ${{ env.NAMESPACE }} --timeout=60s 2>&1 | tail -1
 
     - portCheck:
         port: ${{ env.TUNNEL_SSH_PORT }}
@@ -51,33 +58,39 @@ automation:
       run: kubectl get pods -n ${{ env.NAMESPACE }} -o wide
 
   quickstart-full:
+    - name: Verify prerequisites
+      run: ./setup
+
+    - name: Generate demo SSH keypair
+      run: ./scripts/generate-demo-key.sh
+
     - name: Create kind cluster
       run: ./scripts/setup-cluster.sh ${{ env.CLUSTER_NAME }}
       skipWhen:
         command: "kind get clusters 2>/dev/null | grep -q ${{ env.CLUSTER_NAME }}"
 
     - name: Build validation-server image
-      run: docker build -t validation-server:local services/validation-server/
+      run: docker build -q -t validation-server:local services/validation-server/ && echo "Built validation-server:local"
 
-    - name: Load tunnel image
+    - name: Load images into kind
       run: |
         if ! docker image inspect asd-tunnel:k8s-demo >/dev/null 2>&1; then
-          docker pull ${{ env.TUNNEL_IMAGE }}
+          echo "Pulling tunnel image..."
+          docker pull -q ${{ env.TUNNEL_IMAGE }}
           docker tag ${{ env.TUNNEL_IMAGE }} asd-tunnel:k8s-demo
         fi
-        kind load docker-image asd-tunnel:k8s-demo --name ${{ env.CLUSTER_NAME }}
-
-    - name: Load validation-server image
-      run: kind load docker-image validation-server:local --name ${{ env.CLUSTER_NAME }}
+        echo "Loading asd-tunnel:k8s-demo..."
+        kind load docker-image asd-tunnel:k8s-demo --name ${{ env.CLUSTER_NAME }} 2>&1 | tail -1
+        echo "Loading validation-server:local..."
+        kind load docker-image validation-server:local --name ${{ env.CLUSTER_NAME }} 2>&1 | tail -1
 
     - name: Deploy file-auth overlay (3 replicas, NATS)
       run: kubectl apply -k k8s/overlays/file-auth
 
-    - name: Wait for StatefulSet rollout
-      run: kubectl rollout status statefulset/asd-tunnel -n ${{ env.NAMESPACE }} --timeout=180s
-
-    - name: Wait for validation-server
-      run: kubectl rollout status deployment/validation-server -n ${{ env.NAMESPACE }} --timeout=60s
+    - name: Wait for rollout
+      run: |
+        kubectl rollout status statefulset/asd-tunnel -n ${{ env.NAMESPACE }} --timeout=180s 2>&1 | tail -1
+        kubectl rollout status deployment/validation-server -n ${{ env.NAMESPACE }} --timeout=60s 2>&1 | tail -1
 
     - portCheck:
         port: ${{ env.TUNNEL_SSH_PORT }}
@@ -89,7 +102,13 @@ automation:
 
   teardown:
     - name: Delete kind cluster
-      run: kind delete cluster --name ${{ env.CLUSTER_NAME }}
+      run: |
+        if kind get clusters 2>/dev/null | grep -q "^${{ env.CLUSTER_NAME }}$"; then
+          kind delete cluster --name ${{ env.CLUSTER_NAME }}
+          echo "Cluster '${{ env.CLUSTER_NAME }}' deleted"
+        else
+          echo "⚠ Cluster '${{ env.CLUSTER_NAME }}' does not exist — skipped"
+        fi
 
   # --- Build ---
 
@@ -115,10 +134,18 @@ automation:
   # --- Shared Steps (internal, not CLI commands) ---
 
   _port-forward:
+    - name: Check cluster
+      run: |
+        if ! kind get clusters 2>/dev/null | grep -q "^${{ env.CLUSTER_NAME }}$"; then
+          echo "Cluster '${{ env.CLUSTER_NAME }}' is not running"
+          echo "Start it with: asd run quickstart"
+          exit 1
+        fi
+
     - name: Port-forward validation-server
       run: kubectl port-forward -n ${{ env.NAMESPACE }} svc/validation-server ${{ env.LOCAL_PORT }}:8080
       background: true
-      backgroundTeardownCommand: "pkill -f 'port-forward.*validation-server.*${{ env.LOCAL_PORT }}' || true"
+      onDown: "pkill -f 'port-forward.*validation-server.*${{ env.LOCAL_PORT }}' || true"
 
     - name: Wait for port-forward
       httpWaitFor:
@@ -203,61 +230,8 @@ automation:
         intervalMs: 2000
         timeoutMs: 15000
 
-    - name: Roundtrip test — echo endpoint returns request metadata
-      http:
-        method: GET
-        url: "http://localhost:${{ env.TUNNEL_HTTP_PORT }}/echo"
-        headers:
-          Host: "${{ env.SUBDOMAIN }}.${{ env.TUNNEL_DOMAIN }}"
-          X-Request-ID: "bench-roundtrip-001"
-        expectStatus: 200
-        assertJson:
-          jsonpath: "$.request_id"
-          equals: "bench-roundtrip-001"
-
-    - name: Payload upload — 1MB SHA-256 integrity
-      run: |
-        dd if=/dev/urandom of=/tmp/bench-1m.bin bs=1048576 count=1 2>/dev/null
-        expected=$(sha256sum /tmp/bench-1m.bin | awk '{print $1}')
-        got=$(curl -sf -X POST --data-binary @/tmp/bench-1m.bin \
-          -H "Host: ${{ env.SUBDOMAIN }}.${{ env.TUNNEL_DOMAIN }}" \
-          "http://localhost:${{ env.TUNNEL_HTTP_PORT }}/hash" | jq -r '.sha256')
-        rm -f /tmp/bench-1m.bin
-        [ "$got" = "$expected" ] && echo "PASS: hash=$got" || { echo "FAIL: expected=$expected got=$got"; exit 1; }
-      expect: "PASS"
-
-    - name: Payload download — deterministic bytes integrity
-      run: |
-        curl -sf -D /tmp/bench-headers.txt -o /tmp/bench-dl.bin \
-          -H "Host: ${{ env.SUBDOMAIN }}.${{ env.TUNNEL_DOMAIN }}" \
-          "http://localhost:${{ env.TUNNEL_HTTP_PORT }}/payload/1048576"
-        expected=$(grep -i X-Payload-SHA256 /tmp/bench-headers.txt | tr -d '\r' | awk '{print $2}')
-        got=$(sha256sum /tmp/bench-dl.bin | awk '{print $1}')
-        rm -f /tmp/bench-dl.bin /tmp/bench-headers.txt
-        [ "$got" = "$expected" ] && echo "PASS: hash=$got" || { echo "FAIL: expected=$expected got=$got"; exit 1; }
-      expect: "PASS"
-
-    - name: Concurrent isolation — 10 parallel unique UUIDs
-      run: |
-        tmpdir=$(mktemp -d)
-        for i in $(seq 1 10); do
-          uuid=$(cat /proc/sys/kernel/random/uuid 2>/dev/null || uuidgen)
-          echo "$uuid" > "$tmpdir/uuid-$i"
-          curl -sf -H "X-Request-ID: $uuid" \
-            -H "Host: ${{ env.SUBDOMAIN }}.${{ env.TUNNEL_DOMAIN }}" \
-            "http://localhost:${{ env.TUNNEL_HTTP_PORT }}/echo" > "$tmpdir/result-$i" &
-        done
-        wait
-        pass=0; fail=0
-        for i in $(seq 1 10); do
-          expected=$(cat "$tmpdir/uuid-$i")
-          got=$(jq -r '.request_id' "$tmpdir/result-$i" 2>/dev/null)
-          [ "$got" = "$expected" ] && pass=$((pass+1)) || fail=$((fail+1))
-        done
-        rm -rf "$tmpdir"
-        echo "$pass/10 passed, $fail/10 failed"
-        [ "$fail" -eq 0 ] && echo "PASS" || { echo "FAIL"; exit 1; }
-      expect: "PASS"
+    - name: Run quick benchmark
+      run: ./scripts/benchmark/quick-bench.sh ${{ env.SUBDOMAIN }}
 
   bench-roundtrip:
     - name: Run roundtrip benchmark (100 requests)
@@ -367,7 +341,7 @@ automation:
           -e DOCS_PORT=8080 \
           docs-server:local
       background: true
-      backgroundTeardownCommand: "docker stop asd-docs-demo 2>/dev/null || true"
+      onDown: "docker stop asd-docs-demo 2>/dev/null || true"
 
     - name: Wait for tunnel
       httpWaitFor:
@@ -402,6 +376,14 @@ automation:
   # --- Status ---
 
   status:
+    - name: Check cluster
+      run: |
+        if ! kind get clusters 2>/dev/null | grep -q "^${{ env.CLUSTER_NAME }}$"; then
+          echo "Cluster '${{ env.CLUSTER_NAME }}' is not running"
+          echo "Start it with: asd run quickstart"
+          exit 1
+        fi
+
     - name: Pods
       run: kubectl get pods -n ${{ env.NAMESPACE }} -o wide
 
