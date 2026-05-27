@@ -20,7 +20,7 @@ The `file-auth` overlay enables SSH public key authentication by mounting a dire
 ### Deploying
 
 ```bash
-./scripts/deploy.sh file-auth --build-services
+OVERLAY=file-auth asd run deploy
 ```
 
 ### Adding Keys
@@ -45,10 +45,10 @@ The `file-auth` overlay enables SSH public key authentication by mounting a dire
 
 ### Demo Key
 
-The overlay includes a demo ED25519 keypair for testing. The private key is not included in the ConfigMap (only the `.pub` file is). To use it:
+A demo ED25519 keypair is generated automatically when you run `asd run quickstart-full`. The private key is not committed to the repository — it is created locally by `scripts/generate-demo-key.sh`. To use it:
 
 ```bash
-./scripts/create-tunnel.sh app --auth k8s/overlays/file-auth/ssh-keys/demo
+asd run tunnel-auth
 ```
 
 ### Environment Variables
@@ -79,7 +79,7 @@ The `http-auth` overlay delegates key validation to an external HTTP service. Th
 ### Deploying
 
 ```bash
-./scripts/deploy.sh http-auth --build-services
+OVERLAY=http-auth asd run deploy
 ```
 
 ### Custom Validators

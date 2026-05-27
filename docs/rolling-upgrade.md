@@ -25,10 +25,10 @@ With 3 replicas, a PodDisruptionBudget (`minAvailable: 2`), and the StatefulSet'
 
 ```bash
 # Deploy the rolling-upgrade overlay
-./scripts/deploy.sh rolling-upgrade --build-services
+OVERLAY=rolling-upgrade asd run deploy
 
 # Create a tunnel (in a separate terminal)
-./scripts/create-tunnel.sh app --auth k8s/overlays/file-auth/ssh-keys/demo
+asd run tunnel-auth
 ```
 
 ### Run the Upgrade Test

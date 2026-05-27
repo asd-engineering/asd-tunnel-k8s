@@ -145,7 +145,10 @@ nicow@127.0.0.1: Permission denied (publickey).
 
 - `asd run tunnel-auth` — faalt direct
 - `asd run quickstart-full` gevolgd door `asd run tunnel-auth` — faalt
-- Alle docs die verwijzen naar `--auth k8s/overlays/file-auth/ssh-keys/demo` — werken niet
+- De volgende documenten verwijzen naar de private key zonder te vermelden dat deze gegenereerd moet worden:
+  - `docs/authentication.md` (regel 51) — `--auth k8s/overlays/file-auth/ssh-keys/demo`
+  - `docs/rolling-upgrade.md` (regel 31) — `--auth k8s/overlays/file-auth/ssh-keys/demo`
+- Alleen `docs/airgap-deployment.md` (regel 125) noemt `ssh-keygen` als handmatige stap
 
 ### Oorzaak
 
