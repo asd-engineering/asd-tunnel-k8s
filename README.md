@@ -145,6 +145,28 @@ See [docs/airgap-deployment.md](docs/airgap-deployment.md) — requires image ex
 OVERLAY=<overlay-name> asd run deploy         # see Deployment Modes table below
 ```
 
+### Verify end-to-end (smoke test)
+
+Single-command verification that the full flow works — teardown, deploy, open tunnel, curl, verify response, clean up. Useful for CI or to confirm everything works after a change.
+
+```bash
+asd run smoke-test            # test the recommended HTTPS + auth variant
+asd run smoke-test-all        # test all three quickstart variants
+```
+
+Expected output (pass case):
+
+```
+▸ Variant: HTTPS + SSH auth
+  ✓ Cluster deployed
+  ✓ Pods running: 4
+  ✓ Tunnel established (took 3s)
+  ✓ HTTP response valid (method=GET, host=app.tunnel.local)
+  ✓ Tunnel stopped cleanly
+
+  ✓ All checks passed (5/5)
+```
+
 ### Next Steps
 
 - [Authentication modes](docs/authentication.md) — file-based and HTTP-based auth
@@ -203,8 +225,12 @@ All commands are available via `asd run <task>`. A subset is also available via 
 
 | Command | Description |
 |---------|-------------|
-| `asd run quickstart` | Create kind cluster + deploy minimal overlay |
+| `asd run setup` | Check prerequisites (dry-run) |
+| `asd run quickstart` | Create kind cluster + deploy minimal overlay (no auth) |
 | `asd run quickstart-full` | Create kind cluster + deploy file-auth (3 replicas, NATS) |
+| `asd run quickstart-https` | One-shot HTTPS + SSH auth demo (with-caddy-file-auth) |
+| `asd run quickstart-https-noauth` | One-shot HTTPS demo without auth (with-caddy-noauth) |
+| `asd run quickstart-http-auth` | One-shot HTTP-based auth demo (http-auth) |
 | `asd run teardown` | Delete the kind cluster |
 | `asd run status` | Show pods, services, and port reachability |
 
@@ -228,6 +254,8 @@ All commands are available via `asd run <task>`. A subset is also available via 
 
 | Command | Description |
 |---------|-------------|
+| `asd run smoke-test` | End-to-end test of recommended HTTPS + auth variant |
+| `asd run smoke-test-all` | End-to-end test of all three quickstart variants |
 | `asd run bench` | Built-in benchmark: roundtrip + payload + concurrent |
 | `asd run bench-roundtrip` | 100 UUID header echo requests |
 | `asd run bench-payload` | 12MB + 25MB upload + 1MB download (SHA-256) |

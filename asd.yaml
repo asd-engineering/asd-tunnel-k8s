@@ -249,6 +249,14 @@ automation:
         echo "HTTP-auth cluster is up. Next:"
         echo "  asd run tunnel-auth          # open tunnel (in this or new terminal)"
 
+  smoke-test:
+    - name: End-to-end smoke test (default — HTTPS + auth variant)
+      run: ./scripts/smoke-test.sh
+
+  smoke-test-all:
+    - name: End-to-end smoke test (all three quickstart variants)
+      run: ./scripts/smoke-test.sh all
+
   teardown:
     - name: Delete kind cluster
       run: |
