@@ -100,6 +100,155 @@ automation:
     - name: Cluster ready
       run: kubectl get pods -n ${{ env.NAMESPACE }} -o wide
 
+  # --- One-shot demo variants ---
+  # Each composite task creates the cluster, builds images, generates keys if
+  # needed, and deploys the right overlay. After it finishes, run the matching
+  # tunnel command in a second terminal (e.g. asd run tunnel-auth).
+
+  quickstart-https:
+    - name: Verify prerequisites
+      run: ./setup
+
+    - name: Generate demo SSH keypair
+      run: ./scripts/generate-demo-key.sh
+
+    - name: Create kind cluster
+      run: ./scripts/setup-cluster.sh ${{ env.CLUSTER_NAME }}
+      skipWhen:
+        command: "kind get clusters 2>/dev/null | grep -q ${{ env.CLUSTER_NAME }}"
+
+    - name: Build validation-server image
+      run: docker build -q -t validation-server:local services/validation-server/ && echo "Built validation-server:local"
+
+    - name: Load images into kind
+      run: |
+        if ! docker image inspect asd-tunnel:k8s-demo >/dev/null 2>&1; then
+          echo "Pulling tunnel image..."
+          docker pull -q ${{ env.TUNNEL_IMAGE }}
+          docker tag ${{ env.TUNNEL_IMAGE }} asd-tunnel:k8s-demo
+        fi
+        echo "Loading asd-tunnel:k8s-demo..."
+        kind load docker-image asd-tunnel:k8s-demo --name ${{ env.CLUSTER_NAME }} 2>&1 | tail -1
+        echo "Loading validation-server:local..."
+        kind load docker-image validation-server:local --name ${{ env.CLUSTER_NAME }} 2>&1 | tail -1
+
+    - name: Deploy with-caddy-file-auth overlay (HTTPS + SSH key auth)
+      run: kubectl apply -k k8s/overlays/with-caddy-file-auth
+
+    - name: Wait for rollout
+      run: |
+        kubectl rollout status statefulset/asd-tunnel -n ${{ env.NAMESPACE }} --timeout=180s 2>&1 | tail -1
+        kubectl rollout status deployment/validation-server -n ${{ env.NAMESPACE }} --timeout=60s 2>&1 | tail -1
+
+    - portCheck:
+        port: ${{ env.TUNNEL_SSH_PORT }}
+        timeoutMs: 30000
+        intervalMs: 1000
+
+    - name: Ready — next steps
+      run: |
+        echo ""
+        echo "HTTPS + auth cluster is up. Next:"
+        echo "  asd run tunnel-auth          # open tunnel (in this or new terminal)"
+        echo "  curl -sk --resolve app.tunnel.localhost:30443:127.0.0.1 \\"
+        echo "    https://app.tunnel.localhost:30443/echo | jq ."
+
+  quickstart-https-noauth:
+    - name: Verify prerequisites
+      run: ./setup
+
+    - name: Create kind cluster
+      run: ./scripts/setup-cluster.sh ${{ env.CLUSTER_NAME }}
+      skipWhen:
+        command: "kind get clusters 2>/dev/null | grep -q ${{ env.CLUSTER_NAME }}"
+
+    - name: Build validation-server image
+      run: docker build -q -t validation-server:local services/validation-server/ && echo "Built validation-server:local"
+
+    - name: Load images into kind
+      run: |
+        if ! docker image inspect asd-tunnel:k8s-demo >/dev/null 2>&1; then
+          echo "Pulling tunnel image..."
+          docker pull -q ${{ env.TUNNEL_IMAGE }}
+          docker tag ${{ env.TUNNEL_IMAGE }} asd-tunnel:k8s-demo
+        fi
+        echo "Loading asd-tunnel:k8s-demo..."
+        kind load docker-image asd-tunnel:k8s-demo --name ${{ env.CLUSTER_NAME }} 2>&1 | tail -1
+        echo "Loading validation-server:local..."
+        kind load docker-image validation-server:local --name ${{ env.CLUSTER_NAME }} 2>&1 | tail -1
+
+    - name: Deploy with-caddy-noauth overlay (HTTPS, no auth)
+      run: kubectl apply -k k8s/overlays/with-caddy-noauth
+
+    - name: Wait for rollout
+      run: |
+        kubectl rollout status statefulset/asd-tunnel -n ${{ env.NAMESPACE }} --timeout=180s 2>&1 | tail -1
+        kubectl rollout status deployment/validation-server -n ${{ env.NAMESPACE }} --timeout=60s 2>&1 | tail -1
+
+    - portCheck:
+        port: ${{ env.TUNNEL_SSH_PORT }}
+        timeoutMs: 30000
+        intervalMs: 1000
+
+    - name: Ready — next steps
+      run: |
+        echo ""
+        echo "HTTPS (no auth) cluster is up. Next:"
+        echo "  asd run tunnel               # open tunnel (in this or new terminal)"
+        echo "  curl -sk --resolve app.tunnel.localhost:30443:127.0.0.1 \\"
+        echo "    https://app.tunnel.localhost:30443/echo | jq ."
+
+  quickstart-http-auth:
+    - name: Verify prerequisites
+      run: ./setup
+
+    - name: Generate demo SSH keypair
+      run: ./scripts/generate-demo-key.sh
+
+    - name: Create kind cluster
+      run: ./scripts/setup-cluster.sh ${{ env.CLUSTER_NAME }}
+      skipWhen:
+        command: "kind get clusters 2>/dev/null | grep -q ${{ env.CLUSTER_NAME }}"
+
+    - name: Build images
+      run: |
+        docker build -q -t validation-server:local services/validation-server/ && echo "Built validation-server:local"
+        docker build -q -t key-validator:local services/key-validator/ && echo "Built key-validator:local"
+
+    - name: Load images into kind
+      run: |
+        if ! docker image inspect asd-tunnel:k8s-demo >/dev/null 2>&1; then
+          echo "Pulling tunnel image..."
+          docker pull -q ${{ env.TUNNEL_IMAGE }}
+          docker tag ${{ env.TUNNEL_IMAGE }} asd-tunnel:k8s-demo
+        fi
+        echo "Loading asd-tunnel:k8s-demo..."
+        kind load docker-image asd-tunnel:k8s-demo --name ${{ env.CLUSTER_NAME }} 2>&1 | tail -1
+        echo "Loading validation-server:local..."
+        kind load docker-image validation-server:local --name ${{ env.CLUSTER_NAME }} 2>&1 | tail -1
+        echo "Loading key-validator:local..."
+        kind load docker-image key-validator:local --name ${{ env.CLUSTER_NAME }} 2>&1 | tail -1
+
+    - name: Deploy http-auth overlay (HTTP-based key validation)
+      run: kubectl apply -k k8s/overlays/http-auth
+
+    - name: Wait for rollout
+      run: |
+        kubectl rollout status statefulset/asd-tunnel -n ${{ env.NAMESPACE }} --timeout=180s 2>&1 | tail -1
+        kubectl rollout status deployment/validation-server -n ${{ env.NAMESPACE }} --timeout=60s 2>&1 | tail -1
+        kubectl rollout status deployment/key-validator -n ${{ env.NAMESPACE }} --timeout=60s 2>&1 | tail -1
+
+    - portCheck:
+        port: ${{ env.TUNNEL_SSH_PORT }}
+        timeoutMs: 30000
+        intervalMs: 1000
+
+    - name: Ready — next steps
+      run: |
+        echo ""
+        echo "HTTP-auth cluster is up. Next:"
+        echo "  asd run tunnel-auth          # open tunnel (in this or new terminal)"
+
   teardown:
     - name: Delete kind cluster
       run: |

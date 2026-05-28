@@ -138,7 +138,7 @@ check_asd() {
     PRESENT+=("asd")
   else
     miss "asd" "not found"
-    CANNOT_INSTALL+=("asd")
+    MISSING+=("asd")
   fi
 }
 
@@ -254,6 +254,26 @@ install_ssh() {
   fi
 }
 
+install_asd() {
+  if ! command -v curl &>/dev/null; then
+    miss "asd" "cannot install without curl"
+    return 1
+  fi
+
+  echo "  Installing ASD CLI via official installer ..."
+  curl -fsSL https://asd.host/install.sh | bash
+
+  # The installer puts asd in ~/.local/bin which we already added to PATH
+  if command -v asd &>/dev/null; then
+    local ver
+    ver=$(asd --version 2>/dev/null | head -1)
+    ok "asd" "installed $ver"
+    INSTALLED+=("asd")
+  else
+    miss "asd" "installation failed — install manually: https://github.com/asd-engineering/asd-cli"
+  fi
+}
+
 install_curl() {
   local os
   os=$(detect_os)
@@ -324,10 +344,6 @@ if [ ${#CANNOT_INSTALL[@]} -gt 0 ]; then
       docker-daemon)
         warn "docker" "is installed but not running — start it before continuing"
         ;;
-      asd)
-        warn "$tool" "ASD CLI must be installed manually:"
-        info "" "  https://github.com/asd-engineering/asd-cli"
-        ;;
     esac
   done
 fi
@@ -364,6 +380,7 @@ ensure_install_dir
 
 for tool in "${MISSING[@]}"; do
   case "$tool" in
+    asd)     install_asd     ;;
     kind)    install_kind    ;;
     kubectl) install_kubectl ;;
     jq)      install_jq      ;;

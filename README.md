@@ -6,12 +6,9 @@ Demonstrates a 3-node NATS-clustered tunnel server with SSH-based tunnel creatio
 
 ## Prerequisites
 
-You need two things installed manually:
+The only tool you need installed manually is **[Docker](https://docs.docker.com/get-docker/)** — it requires OS-specific installation (Docker Desktop on macOS/Windows, package manager on Linux).
 
-1. **[Docker](https://docs.docker.com/get-docker/)** — container runtime (requires OS-specific installation)
-2. **[ASD CLI](https://github.com/asd-engineering/asd-cli)** — task runner (`asd run`)
-
-Everything else (kind, kubectl, jq, ssh, curl) is **checked and auto-installed** by the setup script.
+Everything else (ASD CLI, kind, kubectl, jq, ssh, curl) is **checked and auto-installed** by the setup script.
 
 **Optional:** [asd-tunnel](https://github.com/asd-engineering/asd-tunnel) binary — only needed for `asd run tunnel-client` (auto-reconnect) and the docs demo.
 
@@ -107,6 +104,47 @@ asd run bench
 asd run teardown            # Deletes the kind cluster
 ```
 
+## Deploy Variants
+
+One-shot commands for the most useful overlays. Each composite task creates the cluster, builds images, generates keys if needed, and deploys the right overlay. After it finishes, run the matching tunnel command in a second terminal.
+
+| Variant | Command | Tunnel | Access |
+|---------|---------|--------|--------|
+| HTTPS + SSH auth (recommended) | `asd run quickstart-https` | `asd run tunnel-auth` | `https://app.tunnel.localhost:30443` |
+| HTTPS without auth | `asd run quickstart-https-noauth` | `asd run tunnel` | `https://app.tunnel.localhost:30443` |
+| HTTP-based auth | `asd run quickstart-http-auth` | `asd run tunnel-auth` | `http://app.tunnel.local:30080` |
+
+**Example — full HTTPS + auth demo:**
+
+```bash
+asd run quickstart-https           # cluster + key + HTTPS overlay
+asd run tunnel-auth                # open tunnel (keep open)
+# In another terminal:
+curl -sk --resolve "app.tunnel.localhost:30443:127.0.0.1" \
+  https://app.tunnel.localhost:30443/echo | jq .
+```
+
+### Other deployments
+
+**Rolling upgrade test:**
+
+```bash
+asd run quickstart-full                       # cluster + demo key (file-auth)
+OVERLAY=rolling-upgrade asd run deploy        # switch to PDB-enabled overlay
+asd run tunnel-auth                           # tunnel (keep open in 2nd terminal)
+asd run rolling-upgrade-full                  # trigger restart + verify zero-downtime
+```
+
+**Air-gapped deployment:**
+
+See [docs/airgap-deployment.md](docs/airgap-deployment.md) — requires image export and registry setup.
+
+**Deploy any overlay manually:**
+
+```bash
+OVERLAY=<overlay-name> asd run deploy         # see Deployment Modes table below
+```
+
 ### Next Steps
 
 - [Authentication modes](docs/authentication.md) — file-based and HTTP-based auth
@@ -144,11 +182,7 @@ All modes use [Kustomize](https://kustomize.io/) overlays on a common base. Choo
 
 ¹ `with-caddy` enables authentication but mounts no public keys — used as a building block. For an out-of-the-box HTTPS+auth deployment, use `with-caddy-file-auth`.
 
-Deploy a specific overlay:
-
-```bash
-OVERLAY=file-auth asd run deploy
-```
+See [Deploy Variants](#deploy-variants) above for ready-to-run snippets.
 
 ## Documentation
 
