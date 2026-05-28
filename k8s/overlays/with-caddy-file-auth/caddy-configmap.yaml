@@ -1,0 +1,20 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: caddy-config
+  namespace: asd-tunnel-demo
+data:
+  Caddyfile: |
+    {
+        https_port 8443
+    }
+
+    *.tunnel.localhost:8443 {
+        tls internal
+        reverse_proxy localhost:8081 {
+            header_up Host {labels.2}.tunnel.local
+            header_up X-Forwarded-Proto https
+            header_up X-Forwarded-Host {host}
+            header_up X-Real-IP {remote_host}
+        }
+    }

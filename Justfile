@@ -1,149 +1,109 @@
 # asd-tunnel-k8s task runner
-# All recipes also available via: asd run <task>
-# Environment from tpl.env → .env via: asd env init
+# Thin wrapper around `asd run <task>` — all logic lives in asd.yaml.
+# Run `just --list` for available recipes or `asd run` for the full set.
 
 set dotenv-load := true
 set dotenv-path := ".env"
-
-cluster_name := env("CLUSTER_NAME", "asd-tunnel-demo")
-namespace := env("NAMESPACE", "asd-tunnel-demo")
-overlay := env("OVERLAY", "minimal")
-subdomain := env("SUBDOMAIN", "app")
-tunnel_domain := env("TUNNEL_DOMAIN", "tunnel.local")
-tunnel_http := env("TUNNEL_HTTP_PORT", "30080")
-tunnel_ssh := env("TUNNEL_SSH_PORT", "30022")
 
 # List available recipes
 default:
     @just --list
 
-# --- Cluster Lifecycle --- (asd run quickstart / asd run teardown)
+# Check + install prerequisites
+preflight:
+    ./setup
 
-# Create kind cluster + deploy minimal + wait for ready
-quickstart: setup (deploy "minimal")
+preflight-dry-run:
+    ./setup --dry-run
+
+# --- Cluster Lifecycle ---
+
+# Create kind cluster + deploy minimal overlay
+quickstart:
+    asd run quickstart
 
 # Create kind cluster + deploy 3-node NATS cluster with file-auth
-quickstart-full: setup (deploy "file-auth")
-
-# Create kind cluster with port mappings
-setup:
-    ./scripts/setup-cluster.sh {{cluster_name}}
+quickstart-full:
+    asd run quickstart-full
 
 # Delete kind cluster
 teardown:
-    kind delete cluster --name {{cluster_name}}
+    asd run teardown
 
-# --- Build --- (asd run build)
+# Show pods, services, and port reachability
+status:
+    asd run status
+
+# --- Build & Deploy ---
 
 # Build all service Docker images
-build: build-validation build-validator
+build:
+    asd run build
 
-# Build validation-server image
-build-validation:
-    docker build -t validation-server:local services/validation-server/
+# Deploy the overlay specified by $OVERLAY env var
+deploy:
+    asd run deploy
 
-# Build key-validator image
-build-validator:
-    docker build -t key-validator:local services/key-validator/
+# Validate all 7 Kustomize overlays build
+validate:
+    asd run validate
 
-# Pull tunnel image from GHCR and load into kind
-load-tunnel-image:
-    docker pull ${TUNNEL_IMAGE}
-    docker tag ${TUNNEL_IMAGE} asd-tunnel:k8s-demo
-    kind load docker-image asd-tunnel:k8s-demo --name {{cluster_name}}
+# --- Tunnels ---
 
-# Load all images into kind cluster
-load-images: load-tunnel-image
-    kind load docker-image validation-server:local --name {{cluster_name}}
-    kind load docker-image key-validator:local --name {{cluster_name}}
-
-# --- Deploy --- (asd run deploy)
-
-# Deploy an overlay. Usage: just deploy [overlay]
-deploy overlay=overlay: build-validation load-tunnel-image
-    kind load docker-image validation-server:local --name {{cluster_name}}
-    kubectl apply -k k8s/overlays/{{overlay}}
-    kubectl rollout status statefulset/asd-tunnel -n {{namespace}} --timeout=180s
-    kubectl rollout status deployment/validation-server -n {{namespace}} --timeout=60s 2>/dev/null || true
-    @echo ""
-    kubectl get pods -n {{namespace}} -o wide
-
-# --- Tunnel --- (asd run tunnel / asd run tunnel-auth)
-
-# Create SSH tunnel to validation server
-tunnel subdomain=subdomain:
-    ./scripts/create-tunnel.sh {{subdomain}}
+# Create SSH tunnel to validation server (minimal overlay)
+tunnel:
+    asd run tunnel
 
 # Create authenticated SSH tunnel (file-auth overlay)
-tunnel-auth subdomain=subdomain:
-    ./scripts/create-tunnel.sh {{subdomain}} --auth k8s/overlays/file-auth/ssh-keys/demo
+tunnel-auth:
+    asd run tunnel-auth
 
-# --- Benchmarks --- (asd run bench)
+# Create tunnel with asd-tunnel client (auto-reconnect)
+tunnel-client:
+    asd run tunnel-client
 
-# Run all benchmarks
-bench subdomain=subdomain:
-    ./scripts/benchmark/run-all.sh {{subdomain}}
+# --- Benchmarks ---
 
-# Run roundtrip test (100 UUID header echoes)
-bench-roundtrip subdomain=subdomain:
-    ./scripts/benchmark/test-roundtrip.sh {{subdomain}}
+# Quick benchmark (roundtrip + payload + concurrent)
+bench:
+    asd run bench
 
-# Run payload integrity test (12MB + 25MB SHA-256)
-bench-payload subdomain=subdomain:
-    ./scripts/benchmark/test-payload.sh {{subdomain}}
+bench-roundtrip:
+    asd run bench-roundtrip
 
-# Run concurrent isolation test (20 parallel requests)
-bench-concurrent subdomain=subdomain:
-    ./scripts/benchmark/test-concurrent.sh {{subdomain}}
+bench-payload:
+    asd run bench-payload
 
-# Run cross-pod NATS routing test
-bench-cross-pod subdomain=subdomain:
-    ./scripts/benchmark/test-cross-pod.sh {{subdomain}}
+bench-concurrent:
+    asd run bench-concurrent
 
-# --- Rolling Upgrade --- (asd run rolling-upgrade)
+bench-cross-pod:
+    asd run bench-cross-pod
 
-# Run rolling upgrade with availability monitoring
-rolling-upgrade subdomain=subdomain:
-    ./scripts/rolling-upgrade/run-upgrade.sh {{subdomain}}
+bench-stress:
+    asd run bench-stress
 
-# Start continuous availability monitor (Ctrl+C to stop)
-monitor subdomain=subdomain:
-    ./scripts/rolling-upgrade/monitor.sh {{subdomain}}
+bench-auth:
+    asd run bench-auth
 
-# --- Validation --- (asd run validate)
+bench-auth-http:
+    asd run bench-auth-http
 
-# Validate all Kustomize overlays build
-validate:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    ok=0; fail=0
-    for overlay in minimal file-auth http-auth with-caddy rolling-upgrade; do
-      if kubectl kustomize k8s/overlays/$overlay > /dev/null 2>&1; then
-        echo "  OK: $overlay"; ok=$((ok + 1))
-      else
-        echo "  FAIL: $overlay"
-        kubectl kustomize k8s/overlays/$overlay 2>&1 | head -5
-        fail=$((fail + 1))
-      fi
-    done
-    echo ""; echo "$ok passed, $fail failed"
-    [ "$fail" -eq 0 ]
+bench-resilience:
+    asd run bench-resilience
 
-# --- Status --- (asd run status)
+bench-resource-limits:
+    asd run bench-resource-limits
 
-# Show pod status
-pods:
-    kubectl get pods -n {{namespace}} -o wide
+# --- Rolling Upgrade ---
 
-# Show services
-services:
-    kubectl get svc -n {{namespace}}
+rolling-upgrade:
+    asd run rolling-upgrade
 
-# Show all resources
-status:
-    kubectl get all -n {{namespace}}
+rolling-upgrade-full:
+    asd run rolling-upgrade-full
 
-# --- Tests --- (asd run test-drain / asd run test-hardkill)
+# --- Tests ---
 
 # Prove zero-downtime graceful drain (rolling restart)
 test-drain:
@@ -153,6 +113,13 @@ test-drain:
 test-hardkill:
     ./scripts/test-hardkill-recovery.sh
 
+# --- Docs Demo ---
+
+docs:
+    asd run docs
+
+# --- Logs ---
+
 # Follow tunnel pod logs
 logs pod="0":
-    kubectl logs -n {{namespace}} asd-tunnel-{{pod}} -c asd-tunnel -f
+    kubectl logs -n ${NAMESPACE:-asd-tunnel-demo} asd-tunnel-{{pod}} -c asd-tunnel -f

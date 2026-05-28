@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# Shortcut: check and install all prerequisites for asd-tunnel-k8s.
+# Usage:
+#   ./setup              # check + install missing tools
+#   ./setup --dry-run    # only report, don't install anything
+exec "$(dirname "$0")/scripts/preflight.sh" "$@"
