@@ -1,0 +1,17 @@
+# NodePort service exposing Caddy's HTTPS port.
+apiVersion: v1
+kind: Service
+metadata:
+  name: asd-tunnel-caddy
+  namespace: asd-tunnel-demo
+  labels:
+    app: asd-tunnel
+spec:
+  type: NodePort
+  selector:
+    app: asd-tunnel
+  ports:
+    - port: 8443
+      targetPort: 8443
+      nodePort: 30443
+      name: caddy-https

@@ -210,6 +210,9 @@ automation:
     - name: Validate with-caddy-noauth overlay
       run: kubectl kustomize k8s/overlays/with-caddy-noauth > /dev/null
 
+    - name: Validate with-caddy-file-auth overlay
+      run: kubectl kustomize k8s/overlays/with-caddy-file-auth > /dev/null
+
     - name: Validate rolling-upgrade overlay
       run: kubectl kustomize k8s/overlays/rolling-upgrade > /dev/null
 

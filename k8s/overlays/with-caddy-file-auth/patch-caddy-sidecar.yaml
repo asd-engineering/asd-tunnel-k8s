@@ -1,0 +1,70 @@
+# Add Caddy reverse proxy as a sidecar container for TLS termination.
+# Uses an init container to strip file capabilities from the caddy binary,
+# allowing it to run with all capabilities dropped (required by pod security).
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: asd-tunnel
+  namespace: asd-tunnel-demo
+spec:
+  template:
+    spec:
+      initContainers:
+        - name: strip-caddy-caps
+          image: caddy:2-alpine
+          command: ["sh", "-c", "cp /usr/bin/caddy /caddy-bin/caddy"]
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: caddy-bin
+              mountPath: /caddy-bin
+      containers:
+        - name: asd-tunnel
+          # Keep existing container (strategic merge by name)
+          env: []
+        - name: caddy
+          image: caddy:2-alpine
+          command: ["/caddy-bin/caddy"]
+          args: ["run", "--config", "/etc/caddy/Caddyfile", "--adapter", "caddyfile"]
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          ports:
+            - containerPort: 8443
+              name: caddy-https
+          resources:
+            requests:
+              cpu: "5m"
+              memory: "12Mi"
+            limits:
+              cpu: "100m"
+              memory: "64Mi"
+          volumeMounts:
+            - name: caddy-bin
+              mountPath: /caddy-bin
+              readOnly: true
+            - name: caddy-config
+              mountPath: /etc/caddy/Caddyfile
+              subPath: Caddyfile
+            - name: caddy-data
+              mountPath: /data
+            - name: caddy-config-dir
+              mountPath: /config
+      volumes:
+        - name: caddy-bin
+          emptyDir:
+            sizeLimit: 64Mi
+        - name: caddy-config
+          configMap:
+            name: caddy-config
+        - name: caddy-data
+          emptyDir:
+            sizeLimit: 32Mi
+        - name: caddy-config-dir
+          emptyDir:
+            sizeLimit: 16Mi

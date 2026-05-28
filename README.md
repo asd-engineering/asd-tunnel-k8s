@@ -131,15 +131,18 @@ See [docs/architecture.md](docs/architecture.md) for the full component diagram,
 
 All modes use [Kustomize](https://kustomize.io/) overlays on a common base. Choose the overlay that matches your use case:
 
-| Overlay | Replicas | Auth | Use case |
-|---------|----------|------|----------|
-| `minimal` | 1 | None | First look, local development |
-| `file-auth` | 3 | SSH public keys | Team environments, test with real auth |
-| `http-auth` | 3 | HTTP validator | Production pattern (API-based auth) |
-| `with-caddy` | 3 | None | HTTPS via Caddy sidecar |
-| `with-caddy-noauth` | 3 | None | HTTPS demo without auth |
-| `rolling-upgrade` | 3 | SSH public keys | Zero-downtime upgrade testing (PDB) |
-| `airgap` | 3 | SSH public keys | Offline/air-gapped environments |
+| Overlay | Replicas | Auth | TLS | Use case |
+|---------|----------|------|-----|----------|
+| `minimal` | 1 | None | No | First look, local development |
+| `file-auth` | 3 | SSH public keys | No | Team environments, test with real auth |
+| `http-auth` | 3 | HTTP validator | No | Production pattern (API-based auth) |
+| `with-caddy` | 3 | BYO keys¹ | Yes (Caddy) | Template — bring your own keys |
+| `with-caddy-noauth` | 3 | None | Yes (Caddy) | HTTPS demo without auth |
+| `with-caddy-file-auth` | 3 | SSH public keys | Yes (Caddy) | **HTTPS + auth demo (recommended)** |
+| `rolling-upgrade` | 3 | SSH public keys | No | Zero-downtime upgrade testing (PDB) |
+| `airgap` | 3 | SSH public keys | No | Offline/air-gapped environments |
+
+¹ `with-caddy` enables authentication but mounts no public keys — used as a building block. For an out-of-the-box HTTPS+auth deployment, use `with-caddy-file-auth`.
 
 Deploy a specific overlay:
 
@@ -185,7 +188,7 @@ All commands are available via `asd run <task>`. A subset is also available via 
 |---------|-------------|
 | `asd run build` | Build validation-server and key-validator images |
 | `asd run deploy` | Deploy the overlay specified by `$OVERLAY` env var |
-| `asd run validate` | Verify all 7 Kustomize overlays build correctly |
+| `asd run validate` | Verify all 8 Kustomize overlays build correctly |
 
 ### Benchmarks & Tests
 
@@ -273,7 +276,7 @@ setup                      # Preflight wrapper — runs scripts/preflight.sh
 k8s/
   base/                    # StatefulSet, services, NetworkPolicy, ServiceAccount
   components/              # Reusable components (validation-server)
-  overlays/                # Deployment configurations (7 overlays)
+  overlays/                # Deployment configurations (8 overlays)
 services/
   docs-server/             # Docsify SPA + Python server + asd-tunnel client (Alpine container)
   validation-server/       # Go echo server for benchmarks (~5MB image)

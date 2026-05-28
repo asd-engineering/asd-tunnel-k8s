@@ -1,0 +1,31 @@
+# Allow ingress on Caddy HTTPS port (8443) in addition to SSH (2222) and HTTP muxer (8081).
+# NetworkPolicy strategic merge replaces the entire ingress list, so we must
+# repeat the base ports here.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-tunnel
+  namespace: asd-tunnel-demo
+spec:
+  podSelector:
+    matchLabels:
+      app: asd-tunnel
+  ingress:
+    # SSH, HTTP muxer, and Caddy from external (NodePort)
+    - ports:
+        - port: 2222
+          protocol: TCP
+        - port: 8443
+          protocol: TCP
+        - port: 8081
+          protocol: TCP
+    # NATS cluster peering from other tunnel pods
+    - from:
+        - podSelector:
+            matchLabels:
+              app: asd-tunnel
+      ports:
+        - port: 4222
+          protocol: TCP
+        - port: 6222
+          protocol: TCP
