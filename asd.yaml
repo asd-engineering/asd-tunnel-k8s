@@ -197,7 +197,6 @@ automation:
   validate:
     - name: Validate minimal overlay
       run: kubectl kustomize k8s/overlays/minimal > /dev/null
-      expect: ""
 
     - name: Validate file-auth overlay
       run: kubectl kustomize k8s/overlays/file-auth > /dev/null

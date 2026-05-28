@@ -5,14 +5,14 @@ The benchmark suite validates tunnel correctness and reliability across several 
 ## Running
 
 ```bash
-# All tests
-./scripts/benchmark/run-all.sh app
+# Quick bench (roundtrip + payload + concurrent)
+asd run bench
 
 # Individual tests
-./scripts/benchmark/test-roundtrip.sh app
-./scripts/benchmark/test-payload.sh app
-./scripts/benchmark/test-concurrent.sh app
-./scripts/benchmark/test-cross-pod.sh app
+asd run bench-roundtrip
+asd run bench-payload
+asd run bench-concurrent
+asd run bench-cross-pod
 ```
 
 ## Tests

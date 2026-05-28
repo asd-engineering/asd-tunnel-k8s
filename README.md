@@ -97,7 +97,7 @@ Once you're comfortable with the basic setup, try the production-like deployment
 
 ```bash
 asd run quickstart-full     # 3 replicas, NATS clustering, SSH key auth
-asd run tunnel-auth         # Tunnel with included demo SSH key
+asd run tunnel-auth         # Tunnel with demo SSH key (auto-generated)
 asd run bench
 ```
 
@@ -136,7 +136,7 @@ All modes use [Kustomize](https://kustomize.io/) overlays on a common base. Choo
 | `minimal` | 1 | None | First look, local development |
 | `file-auth` | 3 | SSH public keys | Team environments, test with real auth |
 | `http-auth` | 3 | HTTP validator | Production pattern (API-based auth) |
-| `with-caddy` | 3 | SSH public keys | HTTPS via Caddy sidecar |
+| `with-caddy` | 3 | None | HTTPS via Caddy sidecar |
 | `with-caddy-noauth` | 3 | None | HTTPS demo without auth |
 | `rolling-upgrade` | 3 | SSH public keys | Zero-downtime upgrade testing (PDB) |
 | `airgap` | 3 | SSH public keys | Offline/air-gapped environments |
@@ -160,7 +160,7 @@ OVERLAY=file-auth asd run deploy
 
 ## Available Commands
 
-All commands are available via `asd run <task>` or `just <task>`.
+All commands are available via `asd run <task>`. A subset is also available via `just <task>` — see the Justfile for what's supported.
 
 ### Cluster Lifecycle
 
@@ -269,6 +269,7 @@ asd run tunnel-client
 ## Repository Structure
 
 ```
+setup                      # Preflight wrapper — runs scripts/preflight.sh
 k8s/
   base/                    # StatefulSet, services, NetworkPolicy, ServiceAccount
   components/              # Reusable components (validation-server)
@@ -278,8 +279,12 @@ services/
   validation-server/       # Go echo server for benchmarks (~5MB image)
   key-validator/           # Node.js SSH key validator for http-auth
 scripts/
-  setup-cluster.sh         # Create kind cluster
+  preflight.sh             # Check + install prerequisites (kind, kubectl, jq)
+  setup-cluster.sh         # Create kind cluster with port mappings
+  generate-demo-key.sh     # Generate demo SSH keypair + update ConfigMap
   export-images.sh         # Export images for air-gapped deployment
+  test-drain.sh            # Zero-downtime graceful drain test
+  test-hardkill-recovery.sh # NATS retry recovery test
   benchmark/               # Benchmark + security test suite
   rolling-upgrade/         # Upgrade testing
 docs/                      # Architecture, auth, benchmarking, air-gap, production

@@ -34,7 +34,7 @@ asd run tunnel-auth
 ### Run the Upgrade Test
 
 ```bash
-./scripts/rolling-upgrade/run-upgrade.sh app
+asd run rolling-upgrade-full
 ```
 
 This will:
