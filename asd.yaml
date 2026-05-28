@@ -279,6 +279,12 @@ automation:
   # --- Deploy ---
 
   deploy:
+    - name: Ensure demo keypair + ConfigMap exist (for overlays that need them)
+      run: |
+        if [ ! -f k8s/overlays/file-auth/ssh-keys/demo ] || [ ! -f k8s/overlays/file-auth/pubkeys-configmap.yaml ]; then
+          ./scripts/generate-demo-key.sh
+        fi
+
     - name: Deploy overlay
       run: kubectl apply -k k8s/overlays/${{ env.OVERLAY }}
 
